@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables and local configs
+.env
+.grepcue/
+.DS_Store
+
+# Excluded documents as requested
+PRD-github-repo-recommender.md
+README.md

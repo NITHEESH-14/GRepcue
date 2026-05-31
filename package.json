@@ -1,0 +1,42 @@
+{
+  "name": "grepcue",
+  "version": "1.0.0",
+  "description": "GRepcue — GitHub Repo Recommender. Find, compare, and summarize GitHub repos from your terminal or AI editor. MCP server + CLI.",
+  "type": "module",
+  "bin": {
+    "grepcue": "./dist/cli.js"
+  },
+  "main": "./dist/mcp.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start:mcp": "node dist/mcp.js",
+    "start:cli": "node dist/cli.js"
+  },
+  "keywords": [
+    "github",
+    "repository",
+    "recommender",
+    "mcp",
+    "cli",
+    "ai",
+    "developer-tools"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "ora": "^8.2.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3"
+  }
+}
