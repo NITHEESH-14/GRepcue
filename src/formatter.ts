@@ -320,6 +320,16 @@ export function formatConfig(
     lines.push("");
   }
 
+  // Display available config options at the bottom of the config screen
+  lines.push(
+    `  ${c.brand("💡 To update configuration, run:")}`,
+    `    ${c.info("grepcue config -m <1-10>")}      ${c.dim("Set default max results")}`,
+    `    ${c.info("grepcue config -t <minutes>")}   ${c.dim("Set cache TTL in minutes")}`,
+    `    ${c.info("grepcue config --simple")}       ${c.dim("Force minimalist tagline layout")}`,
+    `    ${c.info("grepcue config --no-simple")}    ${c.dim("Display full layout with ASCII art logo")}`,
+    ""
+  );
+
   return lines.join("\n");
 }
 
@@ -381,9 +391,30 @@ export function formatHelp(): string {
     "",
     c.bold("  Options:"),
     `    ${c.info("-V, --version")}  Show version`,
-    `    ${c.info("-h, --help")}     Show help`,
-    ""
+    `    ${c.info("-h, --help")}     Show help`
   );
+
+  if (isNarrow) {
+    lines.push(
+      "",
+      c.bold("  Config Options:"),
+      `    ${c.info("config -m <number>")}    Set max results (1-10)`,
+      `    ${c.info("config -t <minutes>")}   Set cache TTL in min`,
+      `    ${c.info("config --simple")}       Force tagline layout`,
+      `    ${c.info("config --no-simple")}    Display full layout`,
+      ""
+    );
+  } else {
+    lines.push(
+      "",
+      c.bold("  Config Options:"),
+      `    ${c.info("config -m, --max <number>")}    Set default max results (1-10)`,
+      `    ${c.info("config -t, --ttl <minutes>")}   Set cache TTL in minutes (1+)`,
+      `    ${c.info("config --simple")}              Force tagline layout (hide ASCII logo)`,
+      `    ${c.info("config --no-simple")}           Display full layout with ASCII logo`,
+      ""
+    );
+  }
 
   if (isNarrow) {
     lines.push(
