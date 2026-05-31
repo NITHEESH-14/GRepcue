@@ -66,8 +66,7 @@ program
   .version("1.0.0")
   .description(
     chalk.hex("#A78BFA").bold("GRepcue") +
-      chalk.dim(" — A smart CLI assistant to search, compare, and summarize GitHub repositories.\n") +
-      chalk.dim("  Works as a standalone CLI and as an MCP server for AI editors.")
+      chalk.dim(" — Smart assistant for GitHub repositories")
   );
 
 // ---------------------------------------------------------------------------
@@ -586,7 +585,7 @@ if (process.argv.length <= 2) {
   const isNarrow = isNarrowLayout();
   if (isNarrow) {
     console.log("");
-    console.log(chalk.dim("  A smart CLI assistant to search, compare, and summarize GitHub repositories.\n"));
+    console.log(chalk.dim("  Smart assistant for GitHub repositories.\n"));
     console.log(chalk.bold("  Commands:"));
     console.log(`    ${chalk.hex("#60A5FA")("find")} <query>         Search repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <a> <b>      Compare repos`);
@@ -613,8 +612,7 @@ if (process.argv.length <= 2) {
       chalk.hex("#A78BFA").bold("  ╚═══════════════════════════════════════════╝")
     );
     console.log("");
-    console.log(chalk.dim("  A smart CLI assistant to search, compare, and summarize GitHub repositories."));
-    console.log(chalk.dim("  Also works as an MCP server for Claude Desktop & Cursor.\n"));
+    console.log(chalk.dim("  Smart assistant for GitHub repositories.\n"));
     console.log(chalk.bold("  Commands:"));
     console.log(`    ${chalk.hex("#60A5FA")("find")} <query>             Search for repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <repo_a> <repo_b>  Compare two repos`);

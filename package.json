@@ -1,7 +1,7 @@
 {
   "name": "grepcue",
   "version": "1.0.0",
-  "description": "A smart CLI assistant to search, compare, and summarize GitHub repositories. MCP server + CLI.",
+  "description": "Smart assistant for GitHub repositories. MCP server + CLI.",
   "type": "module",
   "bin": {
     "grepcue": "./dist/cli.js"

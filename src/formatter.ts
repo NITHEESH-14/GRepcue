@@ -52,7 +52,7 @@ export function isNarrowLayout(config?: RepcueConfig): boolean {
     process.env.NARROW === "true" ||
     process.env.NARROW === "1" ||
     cols === undefined || 
-    cols < 75
+    cols < 65
   );
 }
 
@@ -351,8 +351,7 @@ export function formatHelp(): string {
   }
 
   lines.push(
-    `  ${c.brand.bold("GRepcue")}${c.dim(" — A smart CLI assistant to search, compare, and summarize GitHub repositories.")}`,
-    c.dim("  Also works as an MCP server for Claude Desktop and AI editors."),
+    `  ${c.brand.bold("GRepcue")}${c.dim(" — Smart assistant for GitHub repositories")}`,
     ""
   );
 
