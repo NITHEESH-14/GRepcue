@@ -66,7 +66,7 @@ program
   .version("1.0.0")
   .description(
     chalk.hex("#A78BFA").bold("GRepcue") +
-      chalk.dim(" — Find, compare & summarize GitHub repos from your terminal.\n") +
+      chalk.dim(" — A smart CLI assistant to search, compare, and summarize GitHub repositories.\n") +
       chalk.dim("  Works as a standalone CLI and as an MCP server for AI editors.")
   );
 
@@ -502,10 +502,9 @@ program
   .command("config")
   .option("-m, --max <number>", "Set default maximum results for search (1-10)")
   .option("-t, --ttl <minutes>", "Set cache TTL in minutes (1+)")
-  .option("--simple", "Force clean minimalist tagline layout (hide ASCII art)")
-  .option("--no-simple", "Display full layout including ASCII art logo")
+  .option("--tagline <on|off>", "Set tagline-only layout mode (on/off)")
   .description("Show or update GRepcue configuration")
-  .action((opts: { max?: string; ttl?: string; simple?: boolean }) => {
+  .action((opts: { max?: string; ttl?: string; tagline?: string }) => {
     const config = loadConfig();
     let updated = false;
 
@@ -529,8 +528,13 @@ program
       updated = true;
     }
 
-    if (opts.simple !== undefined) {
-      config.simple = opts.simple;
+    if (opts.tagline !== undefined) {
+      const val = opts.tagline.toLowerCase();
+      if (val !== "on" && val !== "off") {
+        console.log(formatError("Tagline mode must be 'on' or 'off'."));
+        process.exit(1);
+      }
+      config.simple = (val === "on");
       updated = true;
     }
 
@@ -539,7 +543,7 @@ program
       console.log(formatSuccess("Configuration updated successfully!"));
     }
 
-    if (process.stdout.columns && !opts.max && !opts.ttl && opts.simple === undefined) {
+    if (process.stdout.columns && !opts.max && !opts.ttl && opts.tagline === undefined) {
       // Run the interactive responsive config dashboard
       renderInteractiveConfig(config, hasGitHubToken());
     } else {
@@ -582,13 +586,12 @@ if (process.argv.length <= 2) {
   const isNarrow = isNarrowLayout();
   if (isNarrow) {
     console.log("");
-    console.log(chalk.hex("#A78BFA").bold("  GRepcue") + chalk.dim(" — GitHub Repo Recommender\n"));
-    console.log(chalk.dim("  Find, compare & summarize GitHub repos from your terminal.\n"));
+    console.log(chalk.dim("  A smart CLI assistant to search, compare, and summarize GitHub repositories.\n"));
     console.log(chalk.bold("  Commands:"));
     console.log(`    ${chalk.hex("#60A5FA")("find")} <query>         Search repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <a> <b>      Compare repos`);
     console.log(`    ${chalk.hex("#60A5FA")("summarize")} <repo>    Summarize repo`);
-    console.log(`    ${chalk.hex("#60A5FA")("connect-github")}      Save GitHub token`);
+    console.log(`    ${chalk.hex("#60A5FA")("connect-github")}      Save GitHub token (raise rate limits)`);
     console.log(`    ${chalk.hex("#60A5FA")("connect-ai")}          Connect AI model`);
     console.log(`    ${chalk.hex("#60A5FA")("disconnect")}          Remove saved configs`);
     console.log(`    ${chalk.hex("#60A5FA")("config")} [options]     Show/update config`);
@@ -603,20 +606,20 @@ if (process.argv.length <= 2) {
     );
     console.log(
       chalk.hex("#A78BFA").bold("  ║") +
-        chalk.bold("  🚀 GRepcue — GitHub Repo Recommender    ") +
+        chalk.bold("  🚀 GRepcue — GitHub CLI Assistant       ") +
         chalk.hex("#A78BFA").bold("║")
     );
     console.log(
       chalk.hex("#A78BFA").bold("  ╚═══════════════════════════════════════════╝")
     );
     console.log("");
-    console.log(chalk.dim("  Find, compare & summarize GitHub repos from your terminal."));
+    console.log(chalk.dim("  A smart CLI assistant to search, compare, and summarize GitHub repositories."));
     console.log(chalk.dim("  Also works as an MCP server for Claude Desktop & Cursor.\n"));
     console.log(chalk.bold("  Commands:"));
     console.log(`    ${chalk.hex("#60A5FA")("find")} <query>             Search for repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <repo_a> <repo_b>  Compare two repos`);
     console.log(`    ${chalk.hex("#60A5FA")("summarize")} <repo>          Summarize a repo's README`);
-    console.log(`    ${chalk.hex("#60A5FA")("connect-github")}            Save your GitHub token`);
+    console.log(`    ${chalk.hex("#60A5FA")("connect-github")}            Save GitHub token to increase API limits`);
     console.log(`    ${chalk.hex("#60A5FA")("connect-ai")}                Connect an AI model`);
     console.log(`    ${chalk.hex("#60A5FA")("disconnect")}                Remove saved configs`);
     console.log(`    ${chalk.hex("#60A5FA")("config")} [options]          Show or update config`);

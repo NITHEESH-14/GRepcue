@@ -58,11 +58,7 @@ export function isNarrowLayout(config?: RepcueConfig): boolean {
 
 export function getLogo(isNarrow = isNarrowLayout()): string {
   if (isNarrow) {
-    return [
-      "",
-      c.brand("  GRepcue") + c.dim(" — GitHub Repo Recommender"),
-      ""
-    ].join("\n");
+    return "";
   }
   
   const logoLines = [
@@ -323,10 +319,9 @@ export function formatConfig(
   // Display available config options at the bottom of the config screen
   lines.push(
     `  ${c.brand("💡 To update configuration, run:")}`,
-    `    ${c.info("grepcue config -m <1-10>")}      ${c.dim("Set default max results")}`,
-    `    ${c.info("grepcue config -t <minutes>")}   ${c.dim("Set cache TTL in minutes")}`,
-    `    ${c.info("grepcue config --simple")}       ${c.dim("Force minimalist tagline layout")}`,
-    `    ${c.info("grepcue config --no-simple")}    ${c.dim("Display full layout with ASCII art logo")}`,
+    `    ${c.info("grepcue config -m <1-10>")}       ${c.dim("Set default max results")}`,
+    `    ${c.info("grepcue config -t <minutes>")}    ${c.dim("Set cache TTL in minutes")}`,
+    `    ${c.info("grepcue config --tagline <on|off>")} ${c.dim("Toggle tagline-only layout mode")}`,
     ""
   );
 
@@ -356,8 +351,8 @@ export function formatHelp(): string {
   }
 
   lines.push(
-    `  ${c.brand.bold("GRepcue")}${c.dim(" — Find, compare & summarize GitHub repos")}`,
-    c.dim("  from your terminal. Also an MCP server for AI editors."),
+    `  ${c.brand.bold("GRepcue")}${c.dim(" — A smart CLI assistant to search, compare, and summarize GitHub repositories.")}`,
+    c.dim("  Also works as an MCP server for Claude Desktop and AI editors."),
     ""
   );
 
@@ -368,7 +363,7 @@ export function formatHelp(): string {
       `    ${c.info("find")} <query>         Search repos`,
       `    ${c.info("compare")} <a> <b>      Compare repos`,
       `    ${c.info("summarize")} <repo>    Summarize repo`,
-      `    ${c.info("connect-github")}      Save GitHub token`,
+      `    ${c.info("connect-github")}      Save GitHub token (raise rate limits)`,
       `    ${c.info("connect-ai")}          Connect AI model`,
       `    ${c.info("disconnect")}          Remove configs`,
       `    ${c.info("config")} [options]     Show/update config`,
@@ -379,7 +374,7 @@ export function formatHelp(): string {
       `    ${c.info("find")} <query>              Search for GitHub repositories`,
       `    ${c.info("compare")} <repo_a> <repo_b>  Compare two repos side by side`,
       `    ${c.info("summarize")} <repo>           Summarize a repo and its README`,
-      `    ${c.info("connect-github")}              Save your GitHub Personal Access Token`,
+      `    ${c.info("connect-github")}              Save GitHub token to increase API rate limits`,
       `    ${c.info("connect-ai")}                  Connect an AI model for smarter searches`,
       `    ${c.info("disconnect")}                  Remove saved token and/or AI config`,
       `    ${c.info("config")} [options]            Show or update GRepcue configuration`,
@@ -398,20 +393,18 @@ export function formatHelp(): string {
     lines.push(
       "",
       c.bold("  Config Options:"),
-      `    ${c.info("config -m <number>")}    Set max results (1-10)`,
-      `    ${c.info("config -t <minutes>")}   Set cache TTL in min`,
-      `    ${c.info("config --simple")}       Force tagline layout`,
-      `    ${c.info("config --no-simple")}    Display full layout`,
+      `    ${c.info("config -m <number>")}      Set max results (1-10)`,
+      `    ${c.info("config -t <minutes>")}     Set cache TTL in min`,
+      `    ${c.info("config --tagline on/off")}  Toggle tagline-only mode`,
       ""
     );
   } else {
     lines.push(
       "",
       c.bold("  Config Options:"),
-      `    ${c.info("config -m, --max <number>")}    Set default max results (1-10)`,
-      `    ${c.info("config -t, --ttl <minutes>")}   Set cache TTL in minutes (1+)`,
-      `    ${c.info("config --simple")}              Force tagline layout (hide ASCII logo)`,
-      `    ${c.info("config --no-simple")}           Display full layout with ASCII logo`,
+      `    ${c.info("config -m, --max <number>")}      Set default max results (1-10)`,
+      `    ${c.info("config -t, --ttl <minutes>")}     Set cache TTL in minutes (1+)`,
+      `    ${c.info("config --tagline <on|off>")}      Toggle tagline-only layout mode (on/off)`,
       ""
     );
   }
