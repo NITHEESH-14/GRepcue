@@ -591,7 +591,7 @@ if (process.argv.length <= 2) {
     console.log(`    ${chalk.hex("#60A5FA")("connect-github")}      Save GitHub token`);
     console.log(`    ${chalk.hex("#60A5FA")("connect-ai")}          Connect AI model`);
     console.log(`    ${chalk.hex("#60A5FA")("disconnect")}          Remove saved configs`);
-    console.log(`    ${chalk.hex("#60A5FA")("config")}              Show config`);
+    console.log(`    ${chalk.hex("#60A5FA")("config")} [options]     Show/update config`);
     console.log(`    ${chalk.hex("#60A5FA")("help")}                Show help\n`);
     console.log(chalk.bold("  Examples:"));
     console.log(chalk.dim("    grepcue find scraper"));
@@ -619,7 +619,7 @@ if (process.argv.length <= 2) {
     console.log(`    ${chalk.hex("#60A5FA")("connect-github")}            Save your GitHub token`);
     console.log(`    ${chalk.hex("#60A5FA")("connect-ai")}                Connect an AI model`);
     console.log(`    ${chalk.hex("#60A5FA")("disconnect")}                Remove saved configs`);
-    console.log(`    ${chalk.hex("#60A5FA")("config")}                    Show current config`);
+    console.log(`    ${chalk.hex("#60A5FA")("config")} [options]          Show or update config`);
     console.log(`    ${chalk.hex("#60A5FA")("help")}                      Show help\n`);
     console.log(chalk.dim("  Examples:"));
     console.log(chalk.dim('    grepcue find scraper'));

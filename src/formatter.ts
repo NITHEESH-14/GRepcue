@@ -361,7 +361,7 @@ export function formatHelp(): string {
       `    ${c.info("connect-github")}      Save GitHub token`,
       `    ${c.info("connect-ai")}          Connect AI model`,
       `    ${c.info("disconnect")}          Remove configs`,
-      `    ${c.info("config")}              Show config`,
+      `    ${c.info("config")} [options]     Show/update config`,
       `    ${c.info("help")} [command]       Show help`,
     );
   } else {
@@ -372,7 +372,7 @@ export function formatHelp(): string {
       `    ${c.info("connect-github")}              Save your GitHub Personal Access Token`,
       `    ${c.info("connect-ai")}                  Connect an AI model for smarter searches`,
       `    ${c.info("disconnect")}                  Remove saved token and/or AI config`,
-      `    ${c.info("config")}                      Show or update GRepcue configuration`,
+      `    ${c.info("config")} [options]            Show or update GRepcue configuration`,
       `    ${c.info("help")} [command]               Display help for a command`,
     );
   }
