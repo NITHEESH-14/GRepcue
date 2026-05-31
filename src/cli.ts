@@ -57,8 +57,12 @@ program.helpCommand(false);
 program.helpOption(false);
 program.option('-h, --help', 'display help for command');
 program.on('option:help', () => {
-  console.log(formatHelp());
-  process.exit(0);
+  if (process.stdout.columns) {
+    renderInteractiveHelp();
+  } else {
+    console.log(formatHelp());
+    process.exit(0);
+  }
 });
 
 program
@@ -493,6 +497,57 @@ function renderInteractiveConfig(config: any, hasToken: boolean) {
   process.stdin.on("keypress", onKeypress);
 }
 
+function renderInteractiveHelp() {
+  // Hide cursor to keep output clean
+  process.stdout.write("\x1b[?25l");
+
+  function draw() {
+    // Clear screen, clear scrollback, and move cursor to top-left (0,0)
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+
+    // Print help dynamically based on current process.stdout.columns
+    const output = formatHelp();
+    process.stdout.write(output);
+  }
+
+  // Initial draw
+  draw();
+
+  // Handle window resizing dynamically
+  const onResize = () => {
+    draw();
+  };
+  process.stdout.on("resize", onResize);
+
+  // Set up keypress listening
+  readline.emitKeypressEvents(process.stdin);
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+  }
+  process.stdin.resume();
+
+  const onKeypress = (chunk: any, key: any) => {
+    // Cleanup events
+    process.stdout.off("resize", onResize);
+    process.stdin.off("keypress", onKeypress);
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.pause();
+
+    // Restore cursor
+    process.stdout.write("\x1b[?25h");
+
+    // Clear one last time and leave a pristine final output
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+    process.stdout.write(formatHelp());
+
+    process.exit(0);
+  };
+
+  process.stdin.on("keypress", onKeypress);
+}
+
 // ---------------------------------------------------------------------------
 // Command: config
 // ---------------------------------------------------------------------------
@@ -572,8 +627,12 @@ program
       return;
     }
 
-    // Main help — print help directly and exit automatically
-    console.log(formatHelp());
+    // Main help — use the same interactive pattern as config
+    if (process.stdout.columns) {
+      renderInteractiveHelp();
+    } else {
+      console.log(formatHelp());
+    }
   });
 
 // ---------------------------------------------------------------------------
