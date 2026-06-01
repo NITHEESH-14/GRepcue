@@ -1,4 +1,4 @@
-import { testAIConnection } from "./dist/ai.js";
+import { testAIConnection } from "../dist/ai.js";
 
 const key = process.env.GEMINI_API_KEY || "AIzaSyFakeKeyForTestingHeaders";
 console.log("Testing with key:", key ? key.substring(0, 10) + "..." : "none");
