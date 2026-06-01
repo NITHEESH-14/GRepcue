@@ -45,6 +45,8 @@ export interface RankedRepo {
   score: ScoreBreakdown;
   rank: number;
   fitExplanation?: string;
+  /** The search term that originally fetched this repo (set by parallel search) */
+  matchedKeyword?: string;
 }
 
 /**
@@ -119,6 +121,8 @@ export interface RepcueConfig {
   maxResults: number;
   cacheTTL: number;
   simple?: boolean;
+  history?: string[];
+  bookmarks?: GitHubRepo[];
 }
 
 /**

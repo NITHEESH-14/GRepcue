@@ -1,3 +1,9 @@
+// Force Unicode support on Windows so modern dot spinners and custom prompt prefixes render correctly
+if (process.platform === "win32") {
+  process.env.WT_SESSION = process.env.WT_SESSION || "1";
+  process.env.TERM_PROGRAM = process.env.TERM_PROGRAM || "vscode";
+}
+
 // ============================================================================
 // GRepcue — CLI Entry Point
 // Commands: find, compare, summarize, connect-github, connect-ai, disconnect, config
@@ -8,7 +14,7 @@ import chalk from "chalk";
 import ora from "ora";
 import readline from "node:readline";
 import { select, input, password } from "@inquirer/prompts";
-import { searchRepositories, compareRepos, summarizeRepo, hasGitHubToken } from "./github.js";
+import { searchRepositories, compareRepos, summarizeRepo, hasGitHubToken, getRepoDetails } from "./github.js";
 import { extractKeywords, buildSearchQuery } from "./intent.js";
 import { extractKeywordsWithAI, generateFitExplanation, isAIConfigured, testAIConnection } from "./ai.js";
 import { rankRepos } from "./ranker.js";
@@ -33,9 +39,11 @@ import {
   getLogo,
   isNarrowLayout,
   getTerminalColumns,
+  formatTagline,
+  formatBookmarks,
 } from "./formatter.js";
 import { AI_PROVIDER_PRESETS } from "./types.js";
-import type { AIProvider, AIConfig, RankedRepo } from "./types.js";
+import type { AIProvider, AIConfig, RankedRepo, GitHubRepo } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // CLI Setup
@@ -66,50 +74,144 @@ program
   .version("1.0.0")
   .description(
     chalk.hex("#A78BFA").bold("GRepcue") +
-      chalk.dim(" — Smart assistant for GitHub repositories")
+      chalk.dim(" — Smart assistant to get GitHub repositories")
   );
 
 // ---------------------------------------------------------------------------
 // Command: find
 // ---------------------------------------------------------------------------
 
+const GENERIC_SEARCH_TERMS = new Set([
+  "web",
+  "model",
+  "photo",
+  "logics",
+  "logic",
+  "page",
+  "project",
+  "app",
+  "tool",
+  "software",
+  "design",
+  "component",
+  "components",
+  "template",
+  "templates",
+  "system",
+  "solution",
+  "interface"
+]);
+
 program
   .command("find")
   .argument("<query>", "Project idea or keyword to search for")
   .option("-l, --language <lang>", "Filter by programming language")
-  .option("-m, --max <number>", "Maximum results (1-10)", "5")
+  .option("-m, --max <number>", "Maximum results (1-10)")
   .option("--no-cache", "Skip cached results")
   .option("--json", "Output raw JSON")
   .description("Search for relevant GitHub repositories")
-  .action(async (query: string, opts: { language?: string; max: string; cache: boolean; json: boolean }) => {
-    const maxResults = Math.min(Math.max(parseInt(opts.max) || 5, 1), 10);
-    const spinner = ora({ text: "Searching GitHub...", color: "magenta" }).start();
+  .action(async (query: string, opts: { language?: string; max?: string; cache: boolean; json: boolean }) => {
+    const config = loadConfig();
+    let finalQuery = query;
+    const historyIndex = parseInt(query, 10);
+    if (!isNaN(historyIndex) && historyIndex > 0) {
+      if (config.history && config.history[historyIndex - 1]) {
+        finalQuery = config.history[historyIndex - 1];
+        console.log(chalk.hex("#60A5FA")(`  🔎 Re-running search from history #${historyIndex}: "${finalQuery}"`));
+      }
+    }
+
+    const defaultMax = config.maxResults || 10;
+    const maxResults = Math.min(Math.max(parseInt(opts.max || "") || defaultMax, 1), 10);
+    const spinner = ora({ text: "Searching GitHub...", spinner: DOTS_SPINNER, color: "magenta" }).start();
 
     try {
       // Step 1: Extract keywords (AI-powered if connected, else local)
       let intent;
       if (isAIConfigured()) {
         spinner.text = "Analyzing with AI...";
-        const aiResult = await extractKeywordsWithAI(query);
-        intent = aiResult || extractKeywords(query);
+        const aiResult = await extractKeywordsWithAI(finalQuery);
+        intent = aiResult || extractKeywords(finalQuery);
       } else {
-        intent = extractKeywords(query);
+        intent = extractKeywords(finalQuery);
       }
 
-      // Step 2: Build search query and fetch from GitHub
-      const searchQuery = buildSearchQuery(intent, opts.language);
-      spinner.text = `Searching GitHub for "${searchQuery}"...`;
+      // Step 2: Fetch repositories (using parallel diverse searches if multiple keywords exist)
+      let repos: GitHubRepo[] = [];
+      let searchTerms: string[] = [];
+      const repoSource = new Map<string, string>(); // repo full_name.lower -> searchTerm
+      
+      if (intent.keywords.length > 1) {
+        // Search for specific technical concepts separately, up to 4 parallel searches, filtering out generic keywords
+        const filteredTerms = intent.keywords.filter(term => !GENERIC_SEARCH_TERMS.has(term.toLowerCase()));
+        searchTerms = filteredTerms.length > 0 ? filteredTerms.slice(0, 4) : intent.keywords.slice(0, 2);
+        spinner.text = "Searching GitHub...";
+        
+        const queryPromises = searchTerms.map(term => {
+          // Replace hyphens with spaces for better GitHub search results
+          // (e.g. "plant-disease-detection" → "plant disease detection")
+          let q = term.replace(/-/g, " ");
+          const lang = opts.language || intent.language;
+          if (lang) {
+            q += ` language:${lang}`;
+          }
+          // Fetch up to maxResults * 2 for each to allow rich ranking options
+          return searchRepositories(q, maxResults * 2, "stars", !opts.cache).catch(() => []);
+        });
+        
+        const resultsArray = await Promise.all(queryPromises);
+        const seen = new Set<string>();
 
-      const repos = await searchRepositories(
-        searchQuery,
-        maxResults * 3,
-        "stars",
-        !opts.cache
-      );
+        // Track which search term found each repo (first match wins)
+        for (let i = 0; i < resultsArray.length; i++) {
+          for (const repo of resultsArray[i]) {
+            const key = repo.full_name.toLowerCase();
+            if (!repoSource.has(key)) {
+              repoSource.set(key, searchTerms[i]);
+            }
+          }
+        }
+        
+        // Interleave results from all search terms for diversity
+        let index = 0;
+        let hasMore = true;
+        while (hasMore) {
+          hasMore = false;
+          for (const results of resultsArray) {
+            if (index < results.length) {
+              const repo = results[index];
+              if (!seen.has(repo.full_name.toLowerCase())) {
+                seen.add(repo.full_name.toLowerCase());
+                repos.push(repo);
+              }
+              hasMore = true;
+            }
+          }
+          index++;
+        }
+      } else {
+        searchTerms = intent.keywords.slice(0, 1);
+        const searchQuery = buildSearchQuery(intent, opts.language);
+        spinner.text = "Searching GitHub...";
+        repos = await searchRepositories(
+          searchQuery,
+          maxResults * 3,
+          "stars",
+          !opts.cache
+        );
+      }
 
-      // Step 3: Rank results
-      spinner.text = "Ranking results...";
-      const ranked = rankRepos(repos, intent.keywords, maxResults);
+      // Use the number of search terms actually queried for the total limit
+      const finalLimit = Math.max(searchTerms.length, 1) * maxResults;
+      const ranked = rankRepos(repos, intent.keywords, finalLimit);
+
+      // Tag each ranked repo with the search term that found it
+      for (const item of ranked) {
+        const source = repoSource.get(item.repo.full_name.toLowerCase());
+        if (source) {
+          item.matchedKeyword = source;
+        }
+      }
 
       // Step 4: Generate fit explanations (if AI connected)
       if (isAIConfigured() && ranked.length > 0) {
@@ -117,7 +219,7 @@ program
         const explanations = await Promise.allSettled(
           ranked.map((item) =>
             generateFitExplanation(
-              query,
+              finalQuery,
               item.repo.full_name,
               item.repo.description || ""
             )
@@ -136,6 +238,20 @@ program
         readline.cursorTo(process.stdout, 0);
       }
 
+      // Save search query to history if it returned results
+      if (ranked.length > 0) {
+        const config = loadConfig();
+        if (!config.history) {
+          config.history = [];
+        }
+        config.history = config.history.filter((h) => h !== finalQuery);
+        config.history.push(finalQuery);
+        if (config.history.length > 10) {
+          config.history.shift();
+        }
+        saveConfig(config);
+      }
+
       // Step 5: Output results
       if (opts.json) {
         console.log(JSON.stringify(ranked, null, 2));
@@ -143,15 +259,15 @@ program
         if (!hasGitHubToken()) {
           console.log(
             formatWarning(
-              'No GitHub token set. Rate limited to 10 req/min. Run "grepcue connect-github" for better limits.'
+              'No GitHub token set. Rate limited to 10 req/min. Run "grepcue connect github" for better limits.'
             )
           );
         }
-        console.log(formatRepoList(ranked, query));
+        console.log(formatRepoList(ranked, finalQuery, searchTerms, maxResults));
         if (!isAIConfigured()) {
           console.log(
             chalk.dim(
-              '  💡 Tip: Run "grepcue connect-ai" to enable AI-powered search with smarter results.\n'
+              '  💡 Tip: Run "grepcue connect ai" to enable AI-powered search with smarter results.\n'
             )
           );
         }
@@ -178,7 +294,7 @@ program
   .option("--json", "Output raw JSON")
   .description("Compare two GitHub repositories side by side")
   .action(async (repoA: string, repoB: string, opts: { json: boolean }) => {
-    const spinner = ora({ text: "Fetching repository data...", color: "magenta" }).start();
+    const spinner = ora({ text: "Fetching repository data...", spinner: DOTS_SPINNER, color: "magenta" }).start();
 
     try {
       const comparison = await compareRepos(repoA, repoB);
@@ -214,7 +330,7 @@ program
   .option("--json", "Output raw JSON")
   .description("Get a summary of a GitHub repository and its README")
   .action(async (repo: string, opts: { json: boolean }) => {
-    const spinner = ora({ text: "Fetching repository summary...", color: "magenta" }).start();
+    const spinner = ora({ text: "Fetching repository summary...", spinner: DOTS_SPINNER, color: "magenta" }).start();
 
     try {
       const summary = await summarizeRepo(repo);
@@ -240,197 +356,283 @@ program
     }
   });
 
+const PROMPT_THEME = {
+  prefix: {
+    idle: chalk.hex("#60A5FA").bold("  [?]"),
+    done: chalk.hex("#34D399").bold("  [OK]"),
+  }
+};
+
+const DOTS_SPINNER = {
+  interval: 80,
+  frames: ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"].map(f => chalk.hex("#38BDF8")(f))
+};
+
 // ---------------------------------------------------------------------------
-// Command: connect-github
+// Command: connect helpers & actions
 // ---------------------------------------------------------------------------
 
+async function handleConnectGitHub() {
+  console.log("");
+  console.log(
+    chalk.hex("#A78BFA").bold("  🔑 Connect GitHub Token")
+  );
+  console.log(
+    chalk.dim("  Get a token at: https://github.com/settings/tokens")
+  );
+  console.log(
+    chalk.dim("  No special permissions needed — just create a classic token.\n")
+  );
+
+  try {
+    const token = await password({
+      message: "Enter your GitHub Personal Access Token:",
+      mask: "*",
+      validate: (value) => {
+        if (!value || value.trim().length === 0) return "Token cannot be empty.";
+        if (!value.startsWith("ghp_") && !value.startsWith("github_pat_")) {
+          return 'Token should start with "ghp_" or "github_pat_"';
+        }
+        return true;
+      },
+      theme: PROMPT_THEME,
+    });
+
+    saveGitHubToken(token.trim());
+    console.log(formatSuccess("GitHub token saved to ~/.grepcue/config.json"));
+    console.log(
+      chalk.dim("  You now have 30 requests/min (up from 10). 🚀\n")
+    );
+  } catch {
+    console.log(chalk.dim("\n  Cancelled.\n"));
+  }
+}
+
+const PROVIDER_MODEL_CHOICES: Record<Exclude<AIProvider, "custom">, { name: string; value: string }[]> = {
+  openai: [
+    { name: "GPT-4o (Recommended)", value: "gpt-4o" },
+    { name: "GPT-4o Mini (Fast & Cost-effective)", value: "gpt-4o-mini" },
+    { name: "o1 Mini (Advanced reasoning)", value: "o1-mini" },
+    { name: "o3 Mini (Fast reasoning)", value: "o3-mini" },
+  ],
+  gemini: [
+    { name: "Gemini 2.5 Flash (Latest, Recommended)", value: "gemini-2.5-flash" },
+    { name: "Gemini 2.5 Pro (Latest high-intelligence)", value: "gemini-2.5-pro" },
+    { name: "Gemini 2.0 Flash (Fast & reliable)", value: "gemini-2.0-flash" },
+    { name: "Gemini 2.0 Pro Experimental", value: "gemini-2.0-pro-exp" },
+    { name: "Gemini 1.5 Flash (Legacy fast)", value: "gemini-1.5-flash" },
+    { name: "Gemini 1.5 Pro (Legacy high-intelligence)", value: "gemini-1.5-pro" },
+  ],
+  anthropic: [
+    { name: "Claude 3.7 Sonnet (Advanced & Reasoning)", value: "claude-3-7-sonnet-latest" },
+    { name: "Claude 3.5 Sonnet (Highly Recommended)", value: "claude-3-5-sonnet-latest" },
+    { name: "Claude 3.5 Haiku (Fast & cost-effective)", value: "claude-3-5-haiku-latest" },
+    { name: "Claude 3 Opus (Deep reasoning legacy)", value: "claude-3-opus-latest" },
+  ],
+  ollama: [
+    { name: "Llama 3.2 (Recommended local)", value: "llama3.2" },
+    { name: "Llama 3.3 (High-intelligence local)", value: "llama3.3" },
+    { name: "Mistral 7B", value: "mistral" },
+    { name: "Phi-3", value: "phi3" },
+  ],
+};
+
+async function handleConnectAI() {
+  console.log("");
+  console.log(
+    chalk.hex("#A78BFA").bold("  🔌 Connect an AI Model")
+  );
+  console.log(
+    chalk.dim("  This enables AI-powered keyword extraction and \"why this fits\" explanations.\n")
+  );
+
+  try {
+    // Step 1: Select provider
+    const provider = await select<AIProvider>({
+      message: "Select AI provider:",
+      choices: [
+        { value: "openai" as const, name: "OpenAI (GPT-4o, GPT-4o-mini, etc.)" },
+        { value: "gemini" as const, name: "Google Gemini (Gemini 2.0 Flash, etc.)" },
+        { value: "anthropic" as const, name: "Anthropic (Claude Sonnet, etc.)" },
+        { value: "ollama" as const, name: "Ollama (Local models — Llama, Mistral, etc.)" },
+        { value: "custom" as const, name: "Custom (Any OpenAI-compatible endpoint)" },
+      ],
+      theme: PROMPT_THEME,
+    });
+
+    const preset = AI_PROVIDER_PRESETS[provider];
+    let baseUrl = preset.baseUrl;
+    let model = preset.defaultModel;
+    let apiKey: string | undefined;
+
+    // Step 2: API Key (if required)
+    if (preset.requiresKey) {
+      apiKey = await password({
+        message: `Enter your ${preset.name} API key:`,
+        mask: "*",
+        validate: (value) => {
+          if (!value || value.trim().length === 0) return "API key cannot be empty.";
+          return true;
+        },
+        theme: PROMPT_THEME,
+      });
+      apiKey = apiKey.trim();
+    }
+
+    // Step 3: Base URL (for custom provider)
+    if (provider === "custom") {
+      baseUrl = await input({
+        message: "Enter the API base URL (OpenAI-compatible):",
+        validate: (value) => {
+          if (!value.startsWith("http")) return "URL must start with http:// or https://";
+          return true;
+        },
+        theme: PROMPT_THEME,
+      });
+      baseUrl = baseUrl.trim();
+    }
+
+    // Step 4: Model name
+    if (provider !== "custom") {
+      const modelChoices = [
+        ...PROVIDER_MODEL_CHOICES[provider],
+        { name: "Enter a custom model name...", value: "custom" }
+      ];
+
+      const modelChoice = await select({
+        message: "Select AI model:",
+        choices: modelChoices,
+        theme: PROMPT_THEME,
+      });
+
+      if (modelChoice === "custom") {
+        model = await input({
+          message: "Enter custom model name:",
+          default: preset.defaultModel,
+          theme: PROMPT_THEME,
+        });
+      } else {
+        model = modelChoice;
+      }
+    } else {
+      model = await input({
+        message: "Enter model name:",
+        theme: PROMPT_THEME,
+      });
+    }
+    model = model.trim();
+
+    // Step 5: Test connection
+    const aiConfig: AIConfig = {
+      provider,
+      apiKey,
+      baseUrl,
+      model,
+    };
+
+    const testSpinner = ora({ text: "Testing connection...", spinner: DOTS_SPINNER, color: "magenta" }).start();
+    const result = await testAIConnection(aiConfig);
+
+    if (result.success) {
+      testSpinner.stop();
+      console.log(formatSuccess("Connection successful!"));
+      saveAIConfig(aiConfig);
+      console.log(formatSuccess(`Connected to ${preset.name} (${model}). Config saved to ~/.grepcue/config.json`));
+    } else {
+      testSpinner.stop();
+      console.log(formatError("Connection failed."));
+      console.log(
+        formatError(
+          `Could not connect to the AI model.\n  Error details: ${result.error || "Check your API key, URL, and model name."}`
+        )
+      );
+
+      const saveAnyway = await select({
+        message: "Save the configuration anyway?",
+        choices: [
+          { value: true, name: "Yes — save it (I'll fix the connection later)" },
+          { value: false, name: "No — discard" },
+        ],
+        theme: PROMPT_THEME,
+      });
+
+      if (saveAnyway) {
+        saveAIConfig(aiConfig);
+        console.log(formatSuccess("Config saved (but connection is not verified)."));
+      } else {
+        console.log(chalk.dim("\n  Discarded.\n"));
+      }
+    }
+  } catch {
+    console.log(chalk.dim("\n  Cancelled.\n"));
+  }
+}
+
+// Legacy hyphenated commands for backwards compatibility
 program
   .command("connect-github")
   .description("Save your GitHub Personal Access Token for higher API rate limits")
-  .action(async () => {
-    console.log("");
-    console.log(
-      chalk.hex("#A78BFA").bold("  🔑 Connect GitHub Token")
-    );
-    console.log(
-      chalk.dim("  Get a token at: https://github.com/settings/tokens")
-    );
-    console.log(
-      chalk.dim("  No special permissions needed — just create a classic token.\n")
-    );
-
-    try {
-      const token = await password({
-        message: "Enter your GitHub Personal Access Token:",
-        mask: "*",
-        validate: (value) => {
-          if (!value || value.trim().length === 0) return "Token cannot be empty.";
-          if (!value.startsWith("ghp_") && !value.startsWith("github_pat_")) {
-            return 'Token should start with "ghp_" or "github_pat_"';
-          }
-          return true;
-        },
-      });
-
-      saveGitHubToken(token.trim());
-      console.log(formatSuccess("GitHub token saved to ~/.grepcue/config.json"));
-      console.log(
-        chalk.dim("  You now have 30 requests/min (up from 10). 🚀\n")
-      );
-    } catch {
-      console.log(chalk.dim("\n  Cancelled.\n"));
-    }
-  });
-
-// ---------------------------------------------------------------------------
-// Command: connect-ai
-// ---------------------------------------------------------------------------
+  .action(handleConnectGitHub);
 
 program
   .command("connect-ai")
   .description("Connect an AI model for smarter searches (OpenAI, Gemini, Ollama, etc.)")
-  .action(async () => {
-    console.log("");
-    console.log(
-      chalk.hex("#A78BFA").bold("  🔌 Connect an AI Model")
-    );
-    console.log(
-      chalk.dim("  This enables AI-powered keyword extraction and \"why this fits\" explanations.\n")
-    );
+  .action(handleConnectAI);
 
-    try {
-      // Step 1: Select provider
-      const provider = await select<AIProvider>({
-        message: "Select AI provider:",
-        choices: [
-          { value: "openai" as const, name: "OpenAI (GPT-4o, GPT-4o-mini, etc.)" },
-          { value: "gemini" as const, name: "Google Gemini (Gemini 2.0 Flash, etc.)" },
-          { value: "anthropic" as const, name: "Anthropic (Claude Sonnet, etc.)" },
-          { value: "ollama" as const, name: "Ollama (Local models — Llama, Mistral, etc.)" },
-          { value: "custom" as const, name: "Custom (Any OpenAI-compatible endpoint)" },
-        ],
-      });
+// Main connect subcommand structure
+const connectCmd = program
+  .command("connect")
+  .description("Connect a GitHub token or AI model configuration");
 
-      const preset = AI_PROVIDER_PRESETS[provider];
-      let baseUrl = preset.baseUrl;
-      let model = preset.defaultModel;
-      let apiKey: string | undefined;
+connectCmd
+  .command("github")
+  .description("Save your GitHub Personal Access Token for higher API rate limits")
+  .action(handleConnectGitHub);
 
-      // Step 2: API Key (if required)
-      if (preset.requiresKey) {
-        apiKey = await password({
-          message: `Enter your ${preset.name} API key:`,
-          mask: "*",
-          validate: (value) => {
-            if (!value || value.trim().length === 0) return "API key cannot be empty.";
-            return true;
-          },
-        });
-        apiKey = apiKey.trim();
-      }
-
-      // Step 3: Base URL (for custom provider)
-      if (provider === "custom") {
-        baseUrl = await input({
-          message: "Enter the API base URL (OpenAI-compatible):",
-          validate: (value) => {
-            if (!value.startsWith("http")) return "URL must start with http:// or https://";
-            return true;
-          },
-        });
-        baseUrl = baseUrl.trim();
-      }
-
-      // Step 4: Model name
-      if (provider === "ollama") {
-        model = await input({
-          message: "Enter model name (available on your Ollama instance):",
-          default: preset.defaultModel,
-        });
-      } else {
-        model = await input({
-          message: "Enter model name:",
-          default: preset.defaultModel,
-        });
-      }
-      model = model.trim();
-
-      // Step 5: Test connection
-      const aiConfig: AIConfig = {
-        provider,
-        apiKey,
-        baseUrl,
-        model,
-      };
-
-      const testSpinner = ora({ text: "Testing connection...", color: "magenta" }).start();
-      const connected = await testAIConnection(aiConfig);
-
-      if (connected) {
-        testSpinner.succeed(chalk.hex("#34D399")(" Connection successful!"));
-        saveAIConfig(aiConfig);
-        console.log(formatSuccess(`Connected to ${preset.name} (${model}). Config saved to ~/.grepcue/config.json`));
-      } else {
-        testSpinner.fail(chalk.hex("#F87171")(" Connection failed."));
-        console.log(
-          formatError(
-            "Could not connect to the AI model. Check your API key, URL, and model name."
-          )
-        );
-
-        const saveAnyway = await select({
-          message: "Save the configuration anyway?",
-          choices: [
-            { value: true, name: "Yes — save it (I'll fix the connection later)" },
-            { value: false, name: "No — discard" },
-          ],
-        });
-
-        if (saveAnyway) {
-          saveAIConfig(aiConfig);
-          console.log(formatSuccess("Config saved (but connection is not verified)."));
-        } else {
-          console.log(chalk.dim("\n  Discarded.\n"));
-        }
-      }
-    } catch {
-      console.log(chalk.dim("\n  Cancelled.\n"));
-    }
-  });
+connectCmd
+  .command("ai")
+  .description("Connect an AI model for smarter searches (OpenAI, Gemini, Ollama, etc.)")
+  .action(handleConnectAI);
 
 // ---------------------------------------------------------------------------
 // Command: disconnect
 // ---------------------------------------------------------------------------
 
 program
-  .command("disconnect")
-  .description("Remove saved GitHub token and/or AI model configuration")
-  .action(async () => {
-    console.log("");
-    try {
-      const what = await select({
-        message: "What do you want to disconnect?",
-        choices: [
-          { value: "github", name: "GitHub Token" },
-          { value: "ai", name: "AI Model" },
-          { value: "all", name: "Everything (GitHub + AI)" },
-        ],
-      });
-
-      if (what === "github" || what === "all") {
-        removeGitHubToken();
-        console.log(formatSuccess("GitHub token removed."));
-      }
-      if (what === "ai" || what === "all") {
-        removeAIConfig();
-        console.log(formatSuccess("AI model configuration removed."));
-      }
-    } catch {
-      console.log(chalk.dim("\n  Cancelled.\n"));
-    }
+  .command("disconnect-github")
+  .description("Remove your saved GitHub Personal Access Token")
+  .action(() => {
+    removeGitHubToken();
+    console.log(formatSuccess("GitHub token removed successfully."));
   });
 
+program
+  .command("disconnect-ai")
+  .description("Remove your saved AI model configuration")
+  .action(() => {
+    removeAIConfig();
+    console.log(formatSuccess("AI model configuration removed successfully."));
+  });
 
+const disconnectCmd = program
+  .command("disconnect")
+  .description("Remove saved GitHub token or AI model configuration");
+
+disconnectCmd
+  .command("github")
+  .description("Remove your saved GitHub Personal Access Token")
+  .action(() => {
+    removeGitHubToken();
+    console.log(formatSuccess("GitHub token removed successfully."));
+  });
+
+disconnectCmd
+  .command("ai")
+  .description("Remove your saved AI model configuration")
+  .action(() => {
+    removeAIConfig();
+    console.log(formatSuccess("AI model configuration removed successfully."));
+  });
 
 // ---------------------------------------------------------------------------
 // Command: config
@@ -486,6 +688,156 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// Command: history
+// ---------------------------------------------------------------------------
+
+const historyCmd = program
+  .command("history")
+  .description("Show search query history");
+
+historyCmd
+  .command("clear")
+  .description("Clear search history")
+  .action(() => {
+    const config = loadConfig();
+    config.history = [];
+    saveConfig(config);
+    console.log(formatSuccess("Search history cleared successfully."));
+  });
+
+historyCmd.action(() => {
+  const config = loadConfig();
+  const history = config.history || [];
+  
+  const logo = getLogo();
+  if (logo) {
+    console.log(logo);
+  }
+  console.log(formatTagline());
+  console.log("");
+
+  console.log(chalk.hex("#60A5FA").bold("  GRepcue — Search History"));
+  console.log("");
+  if (history.length === 0) {
+    console.log(chalk.dim("  No search history found. Run \"grepcue find <query>\" first."));
+    console.log("");
+    return;
+  }
+  history.forEach((query, index) => {
+    console.log(`    ${chalk.hex("#60A5FA")(String(index + 1) + ".")} "${query}"`);
+  });
+  console.log("");
+  console.log(chalk.dim("  💡 Tip: Re-run any past search with: grepcue find <number>"));
+  console.log("");
+});
+
+// ---------------------------------------------------------------------------
+// Command: bookmark & bookmarks
+// ---------------------------------------------------------------------------
+
+const bookmarkCmd = program
+  .command("bookmark")
+  .description("Manage your bookmarked GitHub repositories");
+
+bookmarkCmd
+  .command("add <repo>")
+  .description("Bookmark a GitHub repository (Format: owner/repo)")
+  .action(async (repoInput: string) => {
+    const spinner = ora({ text: "Fetching repository details from GitHub...", spinner: DOTS_SPINNER, color: "magenta" }).start();
+    try {
+      const repo = await getRepoDetails(repoInput);
+      spinner.stop();
+      if (process.stdout.isTTY) {
+        readline.clearLine(process.stdout, 0);
+        readline.cursorTo(process.stdout, 0);
+      }
+
+      const config = loadConfig();
+      if (!config.bookmarks) {
+        config.bookmarks = [];
+      }
+
+      const alreadyBookmarked = config.bookmarks.some((b) => b.full_name.toLowerCase() === repo.full_name.toLowerCase());
+      if (alreadyBookmarked) {
+        console.log(formatWarning(`"${repo.full_name}" is already bookmarked.`));
+        return;
+      }
+
+      config.bookmarks.push(repo);
+      saveConfig(config);
+      console.log(formatSuccess(`Successfully bookmarked "${repo.full_name}"!`));
+    } catch (error) {
+      spinner.stop();
+      if (process.stdout.isTTY) {
+        readline.clearLine(process.stdout, 0);
+        readline.cursorTo(process.stdout, 0);
+      }
+      console.error(formatError(error instanceof Error ? error : new Error(String(error))));
+    }
+  });
+
+bookmarkCmd
+  .command("remove <repo>")
+  .description("Remove a bookmarked repository")
+  .action((repoInput: string) => {
+    const config = loadConfig();
+    const bookmarks = config.bookmarks || [];
+    
+    // Normalize input to locate the bookmark cleanly (can accept owner/repo or just the repo name)
+    const normalizedInput = repoInput.trim().toLowerCase();
+    const initialLength = bookmarks.length;
+    
+    config.bookmarks = bookmarks.filter((b) => {
+      const fullName = b.full_name.toLowerCase();
+      return fullName !== normalizedInput && !fullName.endsWith("/" + normalizedInput);
+    });
+
+    if (config.bookmarks.length === initialLength) {
+      console.log(formatWarning(`"${repoInput}" was not found in your bookmarks.`));
+      return;
+    }
+
+    saveConfig(config);
+    console.log(formatSuccess(`Successfully removed "${repoInput}" from bookmarks.`));
+  });
+
+bookmarkCmd
+  .command("list")
+  .description("List all bookmarked repositories")
+  .action(() => {
+    const config = loadConfig();
+    const bookmarks = config.bookmarks || [];
+    console.log(formatBookmarks(bookmarks));
+  });
+
+bookmarkCmd
+  .command("clear")
+  .description("Clear all bookmarked repositories")
+  .action(() => {
+    const config = loadConfig();
+    config.bookmarks = [];
+    saveConfig(config);
+    console.log(formatSuccess("All bookmarked repositories cleared successfully."));
+  });
+
+// Setup default behavior for "grepcue bookmark" without subcommands to list bookmarks
+bookmarkCmd.action(() => {
+  const config = loadConfig();
+  const bookmarks = config.bookmarks || [];
+  console.log(formatBookmarks(bookmarks));
+});
+
+// Standalone "grepcue bookmarks" command
+program
+  .command("bookmarks")
+  .description("List all bookmarked repositories")
+  .action(() => {
+    const config = loadConfig();
+    const bookmarks = config.bookmarks || [];
+    console.log(formatBookmarks(bookmarks));
+  });
+
+// ---------------------------------------------------------------------------
 // Command: help
 // ---------------------------------------------------------------------------
 
@@ -517,41 +869,39 @@ if (process.argv.length <= 2) {
   const isNarrow = isNarrowLayout();
   if (isNarrow) {
     console.log("");
-    console.log(chalk.dim("  Smart assistant for GitHub repositories.\n"));
+    console.log(formatTagline() + "\n");
     console.log(chalk.bold("  Commands:"));
     console.log(`    ${chalk.hex("#60A5FA")("find")} <query>         Search repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <a> <b>      Compare repos`);
     console.log(`    ${chalk.hex("#60A5FA")("summarize")} <repo>    Summarize repo`);
-    console.log(`    ${chalk.hex("#60A5FA")("connect-github")}      Save GitHub token (raise rate limits)`);
-    console.log(`    ${chalk.hex("#60A5FA")("connect-ai")}          Connect AI model`);
-    console.log(`    ${chalk.hex("#60A5FA")("disconnect")}          Remove saved configs`);
+    console.log(`    ${chalk.hex("#60A5FA")("connect github")}      Save GitHub token (raise rate limits)`);
+    console.log(`    ${chalk.hex("#60A5FA")("connect ai")}          Connect AI model`);
+    console.log(`    ${chalk.hex("#60A5FA")("disconnect github")}   Remove saved GitHub token`);
+    console.log(`    ${chalk.hex("#60A5FA")("disconnect ai")}       Remove saved AI config`);
+    console.log(`    ${chalk.hex("#60A5FA")("history")}             Show past search history`);
+    console.log(`    ${chalk.hex("#60A5FA")("bookmarks")}           Show bookmarked repositories`);
     console.log(`    ${chalk.hex("#60A5FA")("config")} [options]     Show/update config`);
     console.log(`    ${chalk.hex("#60A5FA")("help")}                Show help\n`);
     console.log(chalk.bold("  Examples:"));
     console.log(chalk.dim("    grepcue find scraper"));
     console.log(chalk.dim("    grepcue summarize vercel/next.js\n"));
   } else {
-    console.log("");
+    console.log(getLogo());
     console.log(
-      chalk.hex("#A78BFA").bold("  ╔═══════════════════════════════════════════╗")
-    );
-    console.log(
-      chalk.hex("#A78BFA").bold("  ║") +
-        chalk.bold("  🚀 GRepcue — GitHub CLI Assistant       ") +
-        chalk.hex("#A78BFA").bold("║")
-    );
-    console.log(
-      chalk.hex("#A78BFA").bold("  ╚═══════════════════════════════════════════╝")
+      chalk.bold("  🚀 GRepcue — GitHub CLI Assistant")
     );
     console.log("");
-    console.log(chalk.dim("  Smart assistant for GitHub repositories.\n"));
+    console.log(formatTagline() + "\n");
     console.log(chalk.bold("  Commands:"));
     console.log(`    ${chalk.hex("#60A5FA")("find")} <query>             Search for repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <repo_a> <repo_b>  Compare two repos`);
     console.log(`    ${chalk.hex("#60A5FA")("summarize")} <repo>          Summarize a repo's README`);
-    console.log(`    ${chalk.hex("#60A5FA")("connect-github")}            Save GitHub token to increase API limits`);
-    console.log(`    ${chalk.hex("#60A5FA")("connect-ai")}                Connect an AI model`);
-    console.log(`    ${chalk.hex("#60A5FA")("disconnect")}                Remove saved configs`);
+    console.log(`    ${chalk.hex("#60A5FA")("connect github")}            Save GitHub token to increase API limits`);
+    console.log(`    ${chalk.hex("#60A5FA")("connect ai")}                Connect an AI model`);
+    console.log(`    ${chalk.hex("#60A5FA")("disconnect github")}         Remove saved GitHub token`);
+    console.log(`    ${chalk.hex("#60A5FA")("disconnect ai")}             Remove saved AI config`);
+    console.log(`    ${chalk.hex("#60A5FA")("history")}                   Show past search history`);
+    console.log(`    ${chalk.hex("#60A5FA")("bookmarks")}                 Show bookmarked repositories`);
     console.log(`    ${chalk.hex("#60A5FA")("config")} [options]          Show or update config`);
     console.log(`    ${chalk.hex("#60A5FA")("help")}                      Show help\n`);
     console.log(chalk.dim("  Examples:"));

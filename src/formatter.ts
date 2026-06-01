@@ -10,6 +10,7 @@ import type {
   RepoSummary,
   RepcueConfig,
   AIConfig,
+  GitHubRepo,
 } from "./types.js";
 import { AI_PROVIDER_PRESETS } from "./types.js";
 import { loadConfig } from "./config.js";
@@ -19,7 +20,8 @@ import { loadConfig } from "./config.js";
 // ---------------------------------------------------------------------------
 
 const c = {
-  brand: chalk.hex("#A78BFA"),       // Purple — Repcue brand
+  brand: chalk.hex("#60A5FA"),       // Blue — Repcue brand
+  brandGrey: chalk.hex("#94A3B8"),   // Slate Grey
   star: chalk.hex("#FBBF24"),        // Amber — stars
   success: chalk.hex("#34D399"),     // Emerald — success
   warn: chalk.hex("#FB923C"),        // Orange — warnings
@@ -27,19 +29,58 @@ const c = {
   info: chalk.hex("#60A5FA"),        // Blue — info
   dim: chalk.dim,                    // Dim text
   bold: chalk.bold,
-  link: chalk.hex("#818CF8").underline, // Link style
+  link: chalk.hex("#60A5FA").underline, // Link style
   label: chalk.hex("#94A3B8"),       // Slate — labels
   num: chalk.hex("#F9A8D4"),         // Pink — numbers
 };
 
+function getGradientCharColor(index: number, total: number): string {
+  const rStart = 255, gStart = 255, bStart = 255; // #FFFFFF (White)
+  const rEnd = 96, gEnd = 165, bEnd = 250;       // #60A5FA (Blue)
+  
+  const factor = index / (total - 1 || 1);
+  const r = Math.round(rStart + factor * (rEnd - rStart));
+  const g = Math.round(gStart + factor * (gEnd - gStart));
+  const b = Math.round(bStart + factor * (bEnd - bStart));
+  
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+export function formatTagline(): string {
+  const text = "  GRepcue -- Smart assistant to get GitHub repositories";
+  let result = "";
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === " ") {
+      result += " ";
+      continue;
+    }
+    const colorHex = getGradientCharColor(i, text.length);
+    const char = text[i];
+    // Bold the word "GRepcue" (indices 2 to 8)
+    if (i >= 2 && i <= 8) {
+      result += chalk.hex(colorHex).bold(char);
+    } else {
+      result += chalk.hex(colorHex)(char);
+    }
+  }
+  return result;
+}
+
 export function getTerminalColumns(): number | undefined {
-  let cols = process.env.COLUMNS ? parseInt(process.env.COLUMNS) : process.stdout.columns;
-  if (!cols && process.stdout.getWindowSize) {
+  if (process.stdout.getWindowSize) {
     try {
-      cols = process.stdout.getWindowSize()[0];
+      const windowCols = process.stdout.getWindowSize()[0];
+      if (windowCols > 0) return windowCols;
     } catch {}
   }
-  return cols && cols > 0 ? cols : undefined;
+  if (process.stdout.columns && process.stdout.columns > 0) {
+    return process.stdout.columns;
+  }
+  if (process.env.COLUMNS) {
+    const envCols = parseInt(process.env.COLUMNS);
+    if (envCols > 0) return envCols;
+  }
+  return undefined;
 }
 
 export function isNarrowLayout(config?: RepcueConfig): boolean {
@@ -52,29 +93,40 @@ export function isNarrowLayout(config?: RepcueConfig): boolean {
     process.env.NARROW === "true" ||
     process.env.NARROW === "1" ||
     cols === undefined || 
-    cols < 65
+    cols < 95
   );
 }
 
-export function getLogo(isNarrow = isNarrowLayout()): string {
-  if (isNarrow) {
+export function getLogo(): string {
+  const activeConfig = loadConfig();
+  if (
+    activeConfig.simple === true ||
+    process.env.GREPCUE_NARROW === "true" ||
+    process.env.GREPCUE_NARROW === "1" ||
+    process.env.NARROW === "true" ||
+    process.env.NARROW === "1"
+  ) {
+    return "";
+  }
+
+  const cols = getTerminalColumns();
+  // 60 columns is the minimum width for the ASCII art to fit without wrapping.
+  if (cols !== undefined && cols < 60) {
     return "";
   }
   
   const logoLines = [
     "",
-    c.brand("   ██████╗ ██████╗ ███████╗██████╗  ██████╗██╗   ██╗███████╗"),
-    c.brand("  ██╔════╝ ██╔══██╗██╔════╝██╔══██╗██╔════╝██║   ██║██╔════╝"),
-    c.brand("  ██║  ███╗██████╔╝█████╗  ██████╔╝██║     ██║   ██║█████╗  "),
-    c.brand("  ██║   ██║██╔══██╗██╔══╝  ██╔═══╝ ██║     ██║   ██║██╔══╝  "),
-    c.brand("  ╚██████╔╝██║  ██║███████╗██║     ╚██████╗╚██████╔╝███████╗"),
-    c.brand("   ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═════╝ ╚══════╝"),
+    chalk.hex("#94A3B8")("   ██████┐ ██████┐ ███████┐██████┐  ██████┐██┐   ██┐███████┐"),
+    chalk.hex("#78909C")("  ██┌────┘ ██┌──██┐██┌────┘██┌──██┐██┌────┘██│   ██│██┌────┘"),
+    chalk.hex("#60A5FA")("  ██│  ███┐██████┌┘█████┐  ██████┌┘██│     ██│   ██│█████┐  "),
+    chalk.hex("#38BDF8")("  ██│   ██│██┌──██┐██┌──┘  ██┌───┘ ██│     ██│   ██│██┌──┘  "),
+    chalk.hex("#0EA5E9")("  └██████┌┘██│  ██│███████┐██│     └██████┐└██████┌┘███████┐"),
+    chalk.hex("#0284C7")("   └─────┘ └─┘  └─┘└──────┘└─┘      └─────┘ └─────┘ └──────┘"),
     ""
   ].join("\n");
 
-  // \x1b[?7l disables auto-wrap; \x1b[?7h re-enables it.
-  // This keeps the ASCII logo pristine if the terminal is resized after printing.
-  return `\x1b[?7l${logoLines}\x1b[?7h`;
+  return logoLines;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +138,9 @@ export function getLogo(isNarrow = isNarrowLayout()): string {
  */
 export function formatRepoList(
   repos: RankedRepo[],
-  query: string
+  query: string,
+  keywords: string[] = [],
+  maxPerGroup: number = 5
 ): string {
   if (repos.length === 0) {
     return [
@@ -99,51 +153,123 @@ export function formatRepoList(
 
   const lines: string[] = [
     "",
-    c.brand("  ──────────────────────────────────────────────────────────"),
     c.bold("  🔍 GRepcue — Search Results") + c.dim(`  (${repos.length} repos)`),
-    c.brand("  ──────────────────────────────────────────────────────────"),
     "",
     c.dim(`  Query: "${query}"`),
     "",
   ];
 
-  for (const item of repos) {
+  const renderItem = (item: RankedRepo, sectionIndex?: number) => {
     const { repo, score, rank } = item;
     const stars = formatNumber(repo.stargazers_count);
     const lang = repo.language || "N/A";
     const license = repo.license?.spdx_id || "No License";
 
-    // Header line: rank + name
-    lines.push(
-      `  ${c.brand(`${rank}.`)} ${c.bold(repo.full_name)}`
-    );
+    const displayRank = sectionIndex !== undefined ? sectionIndex : rank;
 
-    // Stats line
-    lines.push(
+    const itemLines: string[] = [];
+    itemLines.push(`  ${c.brand(`${displayRank}.`)} ${c.bold(repo.full_name)}`);
+    itemLines.push(
       `     ${c.star("⭐")} ${c.num(stars)}  ` +
         `${c.info("🔤")} ${lang}  ` +
         `${c.dim("📜")} ${license}  ` +
         `${c.dim("Score:")} ${c.num((score.total * 100).toFixed(0) + "%")}`
     );
 
-    // Description
     if (repo.description) {
       const desc =
         repo.description.length > 80
           ? repo.description.substring(0, 77) + "..."
           : repo.description;
-      lines.push(`     ${c.dim(desc)}`);
+      itemLines.push(`     ${c.dim(desc)}`);
     }
 
-    // Link
-    lines.push(`     ${c.link(repo.html_url)}`);
+    itemLines.push(`     ${c.link(repo.html_url)}`);
 
-    // Fit explanation (if AI-generated)
     if (item.fitExplanation) {
-      lines.push(`     ${c.success("→")} ${c.success(item.fitExplanation)}`);
+      itemLines.push(`     ${c.success("→")} ${c.success(item.fitExplanation)}`);
+    }
+    itemLines.push("");
+    return itemLines.join("\n");
+  };
+
+  // If we have keywords, group the repositories!
+  if (keywords.length > 1) {
+    const groups = new Map<string, RankedRepo[]>();
+    const uncategorized: RankedRepo[] = [];
+
+    // Initialize groups for each keyword in lowercase
+    for (const kw of keywords) {
+      groups.set(kw.toLowerCase(), []);
     }
 
-    lines.push("");
+    // Distribute repos into groups using matchedKeyword (set by cli.ts parallel search tracking)
+    for (const item of repos) {
+      const repo = item.repo;
+      // Core text: name + description only (excludes topics for strict relevance validation)
+      const coreText = [repo.full_name, repo.description || ""].join(" ").toLowerCase();
+
+      let placed = false;
+
+      if (item.matchedKeyword) {
+        const sourceKey = item.matchedKeyword.toLowerCase();
+        if (groups.has(sourceKey)) {
+          // Validate: only place in this group if the repo name/description actually mentions the keyword
+          const kwWords = sourceKey.split("-").filter(w => w.length > 2);
+          const isRelevant = kwWords.some(w => coreText.includes(w));
+          if (isRelevant) {
+            groups.get(sourceKey)!.push(item);
+            placed = true;
+          }
+        }
+      }
+
+      if (placed) continue;
+      // Fallback: text-based matching using word boundaries against name + description only
+
+      let matched = false;
+      for (const kw of keywords) {
+        const kwLower = kw.toLowerCase();
+        // Use word boundary regex to avoid partial matches
+        const kwParts = kwLower.split("-").filter(w => w.length > 2);
+        const isMatch = kwParts.some(w => coreText.includes(w));
+        if (isMatch) {
+          groups.get(kwLower)!.push(item);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        uncategorized.push(item);
+      }
+    }
+
+    // Render grouped items (capped at maxPerGroup per section)
+    for (const kw of keywords) {
+      const groupRepos = (groups.get(kw.toLowerCase()) || []).slice(0, maxPerGroup);
+      if (groupRepos.length > 0) {
+        lines.push(c.brand.bold(`  📌 Matches for "${kw}":`));
+        lines.push("");
+        groupRepos.forEach((item, index) => {
+          lines.push(renderItem(item, index + 1));
+        });
+      }
+    }
+
+    // Render uncategorized items (also capped)
+    if (uncategorized.length > 0) {
+      const cappedUncategorized = uncategorized.slice(0, maxPerGroup);
+      lines.push(c.brand.bold("  🔍 General / Related Matches:"));
+      lines.push("");
+      cappedUncategorized.forEach((item, index) => {
+        lines.push(renderItem(item, index + 1));
+      });
+    }
+  } else {
+    // Standard flat list if 1 or 0 keywords
+    for (const item of repos) {
+      lines.push(renderItem(item));
+    }
   }
 
   return lines.join("\n");
@@ -169,9 +295,7 @@ export function formatComparison(data: RepoComparison): string {
 
   const lines: string[] = [
     "",
-    c.brand("  ──────────────────────────────────────────────────────────"),
     c.bold("  ⚔️  GRepcue — Repository Comparison"),
-    c.brand("  ──────────────────────────────────────────────────────────"),
     "",
   ];
 
@@ -181,7 +305,7 @@ export function formatComparison(data: RepoComparison): string {
     `${c.info(pad(nameA, col2Width))} ` +
     `${c.info(pad(nameB, col3Width))}`;
   lines.push(header);
-  lines.push(c.dim(`  ${"─".repeat(col1Width + col2Width + col3Width + 4)}`));
+  lines.push(c.dim(`  ${"-".repeat(col1Width + col2Width + col3Width + 4)}`));
 
   // Data rows
   for (const row of comparison) {
@@ -228,9 +352,7 @@ export function formatSummary(data: RepoSummary): string {
 
   const lines: string[] = [
     "",
-    c.brand("  ──────────────────────────────────────────────────────────"),
     c.bold("  📖 GRepcue — Repository Summary"),
-    c.brand("  ──────────────────────────────────────────────────────────"),
     "",
     `  ${c.bold(repo.full_name)}`,
     `  ${c.link(repo.html_url)}`,
@@ -254,7 +376,7 @@ export function formatSummary(data: RepoSummary): string {
     lines.push("");
   }
 
-  lines.push(c.dim("  ─── README ───────────────────────────────────────────"));
+  lines.push(c.bold("  README:"));
   lines.push("");
 
   // Show README content (first ~40 lines)
@@ -285,21 +407,21 @@ export function formatConfig(
   config: RepcueConfig,
   hasToken: boolean
 ): string {
-  const isNarrow = isNarrowLayout(config);
-  const lines: string[] = [getLogo(isNarrow)];
-
-  if (!isNarrow) {
-    lines.push(
-      c.brand("  ──────────────────────────────────────────────────────────"),
-      c.bold("  GRepcue — Configuration"),
-      c.brand("  ──────────────────────────────────────────────────────────"),
-      ""
-    );
-  }
+  const lines: string[] = [getLogo()];
 
   lines.push(
-    `  ${c.label("GitHub Token:")}  ${hasToken ? c.success("✓ Connected") : c.error("Not set (using unauthenticated API — 10 req/min)")}`,
-    `  ${c.label("AI Model:    ")}  ${config.ai ? c.success(`✓ Connected (${getProviderDisplayName(config.ai)})`) : c.error("Not connected")}`,
+    formatTagline(),
+    ""
+  );
+
+  lines.push(
+    c.brand.bold("  GRepcue -- Configuration"),
+    ""
+  );
+
+  lines.push(
+    `  ${c.label("GitHub Token:")}  ${hasToken ? c.success("[OK] Connected") : c.error("Not set (using unauthenticated API - 10 req/min)")}`,
+    `  ${c.label("AI Model:    ")}  ${config.ai ? c.success(`[OK] Connected (${getProviderDisplayName(config.ai)})`) : c.error("Not connected")}`,
     `  ${c.label("Max Results: ")}  ${c.num(String(config.maxResults))}`,
     `  ${c.label("Cache TTL:   ")}  ${c.num(String(config.cacheTTL / 60000))} minutes`,
     `  ${c.label("Simple Layout:")} ${config.simple === true ? c.success("Enabled (ASCII art disabled)") : c.dim("Disabled")}`,
@@ -316,14 +438,7 @@ export function formatConfig(
     lines.push("");
   }
 
-  // Display available config options at the bottom of the config screen
-  lines.push(
-    `  ${c.brand("💡 To update configuration, run:")}`,
-    `    ${c.info("grepcue config -m <1-10>")}       ${c.dim("Set default max results")}`,
-    `    ${c.info("grepcue config -t <minutes>")}    ${c.dim("Set cache TTL in minutes")}`,
-    `    ${c.info("grepcue config --tagline <on|off>")} ${c.dim("Toggle tagline-only layout mode")}`,
-    ""
-  );
+
 
   return lines.join("\n");
 }
@@ -338,48 +453,35 @@ export function formatConfig(
  * interactive renderer can redraw correctly when the terminal is resized.
  */
 export function formatHelp(): string {
-  const isNarrow = isNarrowLayout();
-  const lines: string[] = [getLogo(isNarrow)];
-
-  if (!isNarrow) {
-    lines.push(
-      c.brand("  ──────────────────────────────────────────────────────────"),
-      c.bold("  GRepcue — Help"),
-      c.brand("  ──────────────────────────────────────────────────────────"),
-      ""
-    );
-  }
+  const lines: string[] = [getLogo()];
 
   lines.push(
-    `  ${c.brand.bold("GRepcue")}${c.dim(" — Smart assistant for GitHub repositories")}`,
+    formatTagline(),
+    ""
+  );
+
+  lines.push(
+    c.brand.bold("  GRepcue -- Help"),
     ""
   );
 
   lines.push(c.bold("  Commands:"));
-
-  if (isNarrow) {
-    lines.push(
-      `    ${c.info("find")} <query>         Search repos`,
-      `    ${c.info("compare")} <a> <b>      Compare repos`,
-      `    ${c.info("summarize")} <repo>    Summarize repo`,
-      `    ${c.info("connect-github")}      Save GitHub token (raise rate limits)`,
-      `    ${c.info("connect-ai")}          Connect AI model`,
-      `    ${c.info("disconnect")}          Remove configs`,
-      `    ${c.info("config")} [options]     Show/update config`,
-      `    ${c.info("help")} [command]       Show help`,
-    );
-  } else {
-    lines.push(
-      `    ${c.info("find")} <query>              Search for GitHub repositories`,
-      `    ${c.info("compare")} <repo_a> <repo_b>  Compare two repos side by side`,
-      `    ${c.info("summarize")} <repo>           Summarize a repo and its README`,
-      `    ${c.info("connect-github")}              Save GitHub token to increase API rate limits`,
-      `    ${c.info("connect-ai")}                  Connect an AI model for smarter searches`,
-      `    ${c.info("disconnect")}                  Remove saved token and/or AI config`,
-      `    ${c.info("config")} [options]            Show or update GRepcue configuration`,
-      `    ${c.info("help")} [command]               Display help for a command`,
-    );
-  }
+  lines.push(
+    `    ${c.info("find")} <query>              Search for GitHub repositories`,
+    `    ${c.info("compare")} <repo_a> <repo_b>  Compare two repos side by side`,
+    `    ${c.info("summarize")} <repo>           Summarize a repo and its README`,
+    `    ${c.info("connect github")}             Save GitHub token to increase API rate limits`,
+    `    ${c.info("connect ai")}                 Connect an AI model for smarter searches`,
+    `    ${c.info("disconnect github")}           Remove your saved GitHub token`,
+    `    ${c.info("disconnect ai")}               Remove your saved AI configuration`,
+    `    ${c.info("history")}                    Show past search query history`,
+    `    ${c.info("history clear")}              Clear all search query history`,
+    `    ${c.info("bookmark add <repo>")}        Bookmark a GitHub repository`,
+    `    ${c.info("bookmark remove <repo>")}     Remove a bookmarked repository`,
+    `    ${c.info("bookmarks")}                  List all bookmarked repositories`,
+    `    ${c.info("config")} [options]            Show or update GRepcue configuration`,
+    `    ${c.info("help")} [command]               Display help for a command`,
+  );
 
   lines.push(
     "",
@@ -388,43 +490,23 @@ export function formatHelp(): string {
     `    ${c.info("-h, --help")}     Show help`
   );
 
-  if (isNarrow) {
-    lines.push(
-      "",
-      c.bold("  Config Options:"),
-      `    ${c.info("config -m <number>")}      Set max results (1-10)`,
-      `    ${c.info("config -t <minutes>")}     Set cache TTL in min`,
-      `    ${c.info("config --tagline on/off")}  Toggle tagline-only mode`,
-      ""
-    );
-  } else {
-    lines.push(
-      "",
-      c.bold("  Config Options:"),
-      `    ${c.info("config -m, --max <number>")}      Set default max results (1-10)`,
-      `    ${c.info("config -t, --ttl <minutes>")}     Set cache TTL in minutes (1+)`,
-      `    ${c.info("config --tagline <on|off>")}      Toggle tagline-only layout mode (on/off)`,
-      ""
-    );
-  }
+  lines.push(
+    "",
+    c.bold("  Config Options:"),
+    `    ${c.info("config -m, --max <number>")}      Set default max results (1-10)`,
+    `    ${c.info("config -t, --ttl <minutes>")}     Set cache TTL in minutes (1+)`,
+    `    ${c.info("config --tagline <on|off>")}      Toggle tagline-only layout mode (on/off)`,
+    ""
+  );
 
-  if (isNarrow) {
-    lines.push(
-      c.dim("  Examples:"),
-      c.dim("    grepcue find scraper"),
-      c.dim("    grepcue summarize vercel/next.js"),
-      ""
-    );
-  } else {
-    lines.push(
-      c.dim("  Examples:"),
-      c.dim("    grepcue find scraper"),
-      c.dim('    grepcue find "web scraper" --language python --max 3'),
-      c.dim("    grepcue compare facebook/react vuejs/core"),
-      c.dim("    grepcue summarize vercel/next.js"),
-      ""
-    );
-  }
+  lines.push(
+    c.dim("  Examples:"),
+    c.dim("    grepcue find scraper"),
+    c.dim('    grepcue find "web scraper" --language python --max 3'),
+    c.dim("    grepcue compare facebook/react vuejs/core"),
+    c.dim("    grepcue summarize vercel/next.js"),
+    ""
+  );
 
   return lines.join("\n");
 }
@@ -433,30 +515,21 @@ export function formatHelp(): string {
 // Format errors
 // ---------------------------------------------------------------------------
 
-/**
- * Formats an error message for terminal display.
- */
 export function formatError(error: Error | string): string {
   const message = error instanceof Error ? error.message : error;
   return [
     "",
-    c.error("  ✗ Error: ") + message,
+    c.error("  [ERROR] ") + message,
     "",
   ].join("\n");
 }
 
-/**
- * Formats a success message.
- */
 export function formatSuccess(message: string): string {
-  return c.success(`\n  ✓ ${message}\n`);
+  return `\n${c.success("  [SUCCESS]")} ${message}\n`;
 }
 
-/**
- * Formats a warning message.
- */
 export function formatWarning(message: string): string {
-  return c.warn(`\n  ⚠ ${message}\n`);
+  return `\n${c.warn("  [WARNING]")} ${message}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,4 +549,63 @@ function pad(str: string, width: number): string {
 function getProviderDisplayName(ai: AIConfig): string {
   const preset = AI_PROVIDER_PRESETS[ai.provider];
   return `${preset?.name || ai.provider} / ${ai.model}`;
+}
+
+/**
+ * Formats the bookmarks list for terminal display.
+ */
+export function formatBookmarks(bookmarks: GitHubRepo[]): string {
+  const lines: string[] = [getLogo()];
+
+  lines.push(
+    formatTagline(),
+    ""
+  );
+
+  lines.push(
+    c.brand.bold("  GRepcue — Bookmarked Repositories"),
+    ""
+  );
+
+  if (bookmarks.length === 0) {
+    lines.push(
+      c.dim("  No bookmarked repositories found."),
+      `  ${c.dim("Bookmark any repo with:")} ${c.info("grepcue bookmark add <owner/repo>")}`,
+      ""
+    );
+    return lines.join("\n");
+  }
+
+  bookmarks.forEach((repo, index) => {
+    const stars = formatNumber(repo.stargazers_count);
+    const lang = repo.language || "N/A";
+    const license = repo.license?.spdx_id || "No License";
+
+    // Header line: index + name
+    lines.push(
+      `  ${c.brand(`${index + 1}.`)} ${c.bold(repo.full_name)}`
+    );
+
+    // Stats line
+    lines.push(
+      `     ${c.star("⭐")} ${c.num(stars)}  ` +
+        `${c.info("🔤")} ${lang}  ` +
+        `${c.dim("📜")} ${license}`
+    );
+
+    // Description
+    if (repo.description) {
+      const desc =
+        repo.description.length > 80
+          ? repo.description.substring(0, 77) + "..."
+          : repo.description;
+      lines.push(`     ${c.dim(desc)}`);
+    }
+
+    // Link
+    lines.push(`     ${c.link(repo.html_url)}`);
+    lines.push("");
+  });
+
+  return lines.join("\n");
 }

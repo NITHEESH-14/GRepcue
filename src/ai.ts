@@ -11,13 +11,45 @@ import type { IntentResult, AIConfig } from "./types.js";
 // AI-powered keyword extraction
 // ---------------------------------------------------------------------------
 
-const EXTRACTION_PROMPT = `You are a GitHub repository search assistant. Given a project description, extract:
-1. "keywords": Array of specific technical keywords for searching GitHub (max 6 keywords). Focus on library names, frameworks, specific technologies, and technical terms.
-2. "language": The programming language mentioned or implied (or null if not specified).
-3. "category": One of: web, mobile, cli, api, database, ml, devops, security, data, game, automation (or null).
+const EXTRACTION_PROMPT = `You are a GitHub repository search assistant. Given a project description, extract the following as valid JSON:
 
-Respond ONLY with valid JSON. No explanation. Example:
-{"keywords": ["websocket", "real-time", "chat"], "language": "Python", "category": "web"}`;
+1. "keywords": Array of up to 6 search terms for GitHub. Follow this logic:
+   STEP 1 — Identify every distinct feature or product the user wants to build.
+   Each one becomes a keyword candidate regardless of how simple it sounds.
+   (e.g. "calculator", "chatbot", "plant disease detection" are all distinct features — keep all of them)
+   
+   STEP 2 — For any ML/AI feature, append one specific technical term alongside it.
+   (e.g. "plant-disease-detection" → also add "image-classification" or "CNN")
+   
+   STEP 3 — Drop anything that is purely aesthetic or non-searchable on GitHub.
+   (e.g. "glassmorphism", "modern", "beautiful", "precise", "accurate")
+
+2. "language": Primary programming language if mentioned or strongly implied. 
+   If multiple are mentioned, pick the backend/core one. Return null if unclear.
+
+3. "category": One of:
+   - "web" — websites, frontend, browser apps
+   - "mobile" — iOS/Android/cross-platform apps
+   - "cli" — terminal tools, command-line utilities
+   - "api" — backend services, REST/GraphQL servers
+   - "database" — storage engines, ORMs, query tools
+   - "ml" — machine learning, AI models, training pipelines
+   - "devops" — CI/CD, containers, infrastructure, deployment
+   - "automation" — bots, scrapers, scheduled scripts
+   - "data" — analytics, visualization, ETL pipelines
+   - "game" — game engines, simulations
+   - "security" — auth, encryption, pen-testing tools
+   Return null if none fit.
+
+Respond ONLY with valid JSON. No explanation, no markdown.
+
+Examples:
+Input: "real-time chat app using websockets in Python"
+Output: {"keywords": ["chatbot", "websocket", "real-time"], "language": "Python", "category": "web"}
+
+Input: "web page with a chatbot, calculator, and a plant disease detection model from photo"
+Output: {"keywords": ["chatbot", "calculator", "plant-disease-detection", "image-classification", "CNN"], "language": null, "category": "web"}`;
+
 
 /**
  * Extracts keywords from a project description using the connected AI model.
@@ -124,7 +156,17 @@ async function callAI(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`AI API error (${response.status}): ${errorText}`);
+    let cleanMessage = errorText;
+    try {
+      const parsed = JSON.parse(errorText);
+      const errObj = Array.isArray(parsed) ? parsed[0]?.error : parsed?.error;
+      if (errObj && errObj.message) {
+        cleanMessage = errObj.message;
+      }
+    } catch {
+      // Fallback to raw text if not JSON
+    }
+    throw new Error(`AI API error (${response.status}): ${cleanMessage}`);
   }
 
   const data = (await response.json()) as {
@@ -138,14 +180,15 @@ async function callAI(
  * Tests the AI connection by sending a simple request.
  * Returns true if the connection is successful.
  */
-export async function testAIConnection(config: AIConfig): Promise<boolean> {
+export async function testAIConnection(config: AIConfig): Promise<{ success: boolean; error?: string }> {
   try {
     const result = await callAI(config, [
       { role: "user", content: 'Reply with just the word "connected"' },
     ]);
-    return result.length > 0;
-  } catch {
-    return false;
+    return { success: result.length > 0 };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg };
   }
 }
 

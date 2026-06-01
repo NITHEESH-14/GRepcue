@@ -13,19 +13,33 @@ const STOP_WORDS = new Set([
   // Articles & pronouns
   "i", "a", "an", "the", "my", "me", "we", "our", "it", "its",
   // Verbs (intent words)
-  "want", "need", "looking", "trying", "build", "create", "make", "develop",
-  "write", "implement", "design", "find", "search", "get", "use", "using",
+  "want", "need", "looking", "trying", "build", "built", "building", "create", "creates", "make", "makes", "making", "develop", "developed", "developing",
+  "write", "implement", "design", "designed", "designing", "find", "search", "get", "use", "using", "add", "added", "adding",
   "am", "is", "are", "was", "were", "be", "been", "being",
   "have", "has", "had", "do", "does", "did", "will", "would", "could",
-  "should", "can", "may", "might",
+  "should", "can", "may", "might", "needs", "needed",
   // Prepositions & conjunctions
   "to", "for", "with", "in", "on", "at", "from", "of", "by",
   "and", "or", "but", "that", "this", "which", "who", "what", "how",
   "like", "about", "into", "through", "between",
   // Filler
-  "very", "really", "just", "also", "some", "any", "all", "more",
+  "very", "really", "just", "also", "some", "any", "all", "more", "most", "least", "less",
   "something", "thing", "things", "stuff", "project", "app", "application",
-  "tool", "program", "software", "system", "solution", "platform",
+  "tool", "program", "software", "system", "solution", "platform", "page", "pages",
+  // Generic Adjectives & Descriptors
+  "modern", "beautiful", "pretty", "gorgeous", "stunning",
+  "awesome", "cool", "fun", "amazing", "incredible",
+  "easy", "simple", "hard", "difficult", "lightweight",
+  "smart", "intelligent", "clever",
+  "best", "great", "good", "nice", "excellent", "awesome",
+  "latest", "new", "recent", "old",
+  "fast", "quick", "speedy", "slow", "high-performance",
+  "popular", "famous", "trending", "gilded",
+  "precise", "accurate", "correct", "exact",
+  "detect", "detects", "detecting",
+  "some", "many", "few", "several", "lot", "lots",
+  "each", "every", "all", "both", "either", "neither",
+  "one", "two", "three", "four", "five", "first", "second", "third", "number", "numbers",
 ]);
 
 // ---------------------------------------------------------------------------
