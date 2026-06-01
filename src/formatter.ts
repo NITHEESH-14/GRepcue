@@ -206,31 +206,28 @@ export function formatRepoList(
     // Distribute repos into groups using matchedKeyword (set by cli.ts parallel search tracking)
     for (const item of repos) {
       const repo = item.repo;
-      // Core text: name + description only (excludes topics for strict relevance validation)
-      const coreText = [repo.full_name, repo.description || ""].join(" ").toLowerCase();
+      // Core text: name + description + topics for rich relevance validation
+      const coreText = [
+        repo.full_name,
+        repo.description || "",
+        ...(repo.topics || [])
+      ].join(" ").toLowerCase();
 
       let placed = false;
 
       if (item.matchedKeyword) {
         const sourceKey = item.matchedKeyword.toLowerCase();
         if (groups.has(sourceKey)) {
-          // Validate: only place in this group if the repo name/description actually mentions the keyword
-          const kwWords = sourceKey.split("-").filter(w => w.length > 2);
-          const isRelevant = kwWords.some(w => coreText.includes(w));
-          if (isRelevant) {
-            groups.get(sourceKey)!.push(item);
-            placed = true;
-          }
+          groups.get(sourceKey)!.push(item);
+          placed = true;
         }
       }
 
       if (placed) continue;
-      // Fallback: text-based matching using word boundaries against name + description only
-
+      // Fallback: text-based matching using name + description + topics
       let matched = false;
       for (const kw of keywords) {
         const kwLower = kw.toLowerCase();
-        // Use word boundary regex to avoid partial matches
         const kwParts = kwLower.split("-").filter(w => w.length > 2);
         const isMatch = kwParts.some(w => coreText.includes(w));
         if (isMatch) {

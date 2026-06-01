@@ -51,7 +51,6 @@ function scoreRelevance(repo: GitHubRepo, keywords: string[]): number {
   const searchText = [
     repo.full_name,
     repo.description || "",
-    ...(repo.topics || []),
   ]
     .join(" ")
     .toLowerCase();

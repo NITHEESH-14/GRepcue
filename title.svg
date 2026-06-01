@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 40" width="100%">
+  <defs>
+    <style>
+      .title-text {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 19px;
+        font-weight: bold;
+        text-anchor: middle;
+        fill: url(#text-grad-light);
+      }
+      @media (prefers-color-scheme: dark) {
+        .title-text {
+          fill: url(#text-grad-dark);
+        }
+      }
+    </style>
+    <!-- Light Mode Gradient -->
+    <linearGradient id="text-grad-light" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <!-- Dark Mode Gradient -->
+    <linearGradient id="text-grad-dark" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#60A5FA" />
+    </linearGradient>
+  </defs>
+  <text x="50%" y="26" class="title-text">
+    GRepcue — Smart assistant to get GitHub repositories
+  </text>
+</svg>

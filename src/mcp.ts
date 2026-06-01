@@ -46,7 +46,7 @@ server.tool(
     try {
       // Extract keywords locally (the host LLM already understands intent)
       const intent = extractKeywords(description);
-      const query = buildSearchQuery(intent, language);
+      const query = buildSearchQuery(intent, language) + " in:name,description";
 
       // Search GitHub
       const repos = await searchRepositories(query, max_results * 3);

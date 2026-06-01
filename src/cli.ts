@@ -137,9 +137,8 @@ program
       }
 
       // Step 2: Fetch repositories (using parallel diverse searches if multiple keywords exist)
-      let repos: GitHubRepo[] = [];
+      let ranked: RankedRepo[] = [];
       let searchTerms: string[] = [];
-      const repoSource = new Map<string, string>(); // repo full_name.lower -> searchTerm
       
       if (intent.keywords.length > 1) {
         // Search for specific technical concepts separately, up to 4 parallel searches, filtering out generic keywords
@@ -148,9 +147,9 @@ program
         spinner.text = "Searching GitHub...";
         
         const queryPromises = searchTerms.map(term => {
-          // Replace hyphens with spaces for better GitHub search results
-          // (e.g. "plant-disease-detection" → "plant disease detection")
-          let q = term.replace(/-/g, " ");
+          // Replace hyphens with spaces for better GitHub search results and restrict to name & description
+          // (e.g. "plant-disease-detection" → "plant disease detection in:name,description")
+          let q = `${term.replace(/-/g, " ")} in:name,description`;
           const lang = opts.language || intent.language;
           if (lang) {
             q += ` language:${lang}`;
@@ -160,29 +159,32 @@ program
         });
         
         const resultsArray = await Promise.all(queryPromises);
-        const seen = new Set<string>();
 
-        // Track which search term found each repo (first match wins)
-        for (let i = 0; i < resultsArray.length; i++) {
-          for (const repo of resultsArray[i]) {
-            const key = repo.full_name.toLowerCase();
-            if (!repoSource.has(key)) {
-              repoSource.set(key, searchTerms[i]);
-            }
+        // Score and rank repositories per-concept to avoid popularity bias across disjoint concepts
+        const rankedPerConcept: RankedRepo[][] = [];
+        for (let i = 0; i < searchTerms.length; i++) {
+          const term = searchTerms[i];
+          const results = resultsArray[i];
+          const conceptRanked = rankRepos(results, [term], maxResults);
+          
+          for (const item of conceptRanked) {
+            item.matchedKeyword = term;
           }
+          rankedPerConcept.push(conceptRanked);
         }
-        
-        // Interleave results from all search terms for diversity
+
+        // Interleave the ranked results to construct the final array for flat list outputs (like --json)
+        const seen = new Set<string>();
         let index = 0;
         let hasMore = true;
         while (hasMore) {
           hasMore = false;
-          for (const results of resultsArray) {
-            if (index < results.length) {
-              const repo = results[index];
-              if (!seen.has(repo.full_name.toLowerCase())) {
-                seen.add(repo.full_name.toLowerCase());
-                repos.push(repo);
+          for (const conceptRanked of rankedPerConcept) {
+            if (index < conceptRanked.length) {
+              const item = conceptRanked[index];
+              if (!seen.has(item.repo.full_name.toLowerCase())) {
+                seen.add(item.repo.full_name.toLowerCase());
+                ranked.push(item);
               }
               hasMore = true;
             }
@@ -191,26 +193,15 @@ program
         }
       } else {
         searchTerms = intent.keywords.slice(0, 1);
-        const searchQuery = buildSearchQuery(intent, opts.language);
+        const searchQuery = buildSearchQuery(intent, opts.language) + " in:name,description";
         spinner.text = "Searching GitHub...";
-        repos = await searchRepositories(
+        const repos = await searchRepositories(
           searchQuery,
           maxResults * 3,
           "stars",
           !opts.cache
         );
-      }
-
-      // Use the number of search terms actually queried for the total limit
-      const finalLimit = Math.max(searchTerms.length, 1) * maxResults;
-      const ranked = rankRepos(repos, intent.keywords, finalLimit);
-
-      // Tag each ranked repo with the search term that found it
-      for (const item of ranked) {
-        const source = repoSource.get(item.repo.full_name.toLowerCase());
-        if (source) {
-          item.matchedKeyword = source;
-        }
+        ranked = rankRepos(repos, intent.keywords, maxResults);
       }
 
       // Step 4: Generate fit explanations (if AI connected)
