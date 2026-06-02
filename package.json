@@ -25,7 +25,7 @@
     "ai",
     "developer-tools"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
     "@modelcontextprotocol/sdk": "^1.12.1",

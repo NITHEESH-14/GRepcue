@@ -6,6 +6,27 @@
 
 ---
 
+## Table of Contents
+
+- [Why GRepcue?](#why-grepcue)
+- [Features](#features)
+- [Local Installation & Setup](#local-installation--setup)
+- [MCP Server Integration](#mcp-server-integration)
+- [CLI Subcommands](#cli-subcommands)
+  - [Search Repositories](#search-repositories)
+  - [Clone Repositories](#clone-repositories)
+  - [Bookmarks System](#bookmarks-system)
+  - [Compare Repositories](#compare-repositories)
+  - [Summarize a Repository](#summarize-a-repository)
+  - [Search History](#search-history)
+  - [Connect AI Integration](#connect-ai-integration)
+  - [Connect GitHub Token](#connect-github-token)
+  - [View/Update Configuration](#viewupdate-configuration)
+- [Scoring & Ranking Algorithm](#scoring--ranking-algorithm)
+- [License](#license)
+
+---
+
 ### Why GRepcue?
 
 Every great software project starts with a spark of inspiration—a new app, a library, or a tool idea. But in the vast global developer community, **someone might have already built and open-sourced something similar or highly related.** 
@@ -47,6 +68,42 @@ npm link
 ```
 
 Once linked, the global `grepcue` executable is registered on your machine. You can run it from any folder!
+
+---
+
+## MCP Server Integration
+
+GRepcue acts as a **Model Context Protocol (MCP)** server, making its repository assistant tools directly available to AI coding assistants (such as Cursor, Claude Desktop, Windsurf, or VS Code).
+
+### Configuration Settings
+
+To connect GRepcue as an MCP server to your preferred client, use the following configuration settings:
+
+* **Name**: `grepcue`
+* **Type**: `command` (or stdio)
+* **Command**: `node`
+* **Arguments**: `["C:/absolute/path/to/GRepcue/dist/mcp.js"]` *(replace with the absolute path on your system)*
+
+#### JSON Configuration Example
+If your client uses a `config.json` file (such as Claude Desktop or VS Code MCP extensions), add GRepcue to your `mcpServers` configuration:
+
+```json
+{
+  "mcpServers": {
+    "grepcue": {
+      "command": "node",
+      "args": ["C:/absolute/path/to/GRepcue/dist/mcp.js"]
+    }
+  }
+}
+```
+
+### MCP Tools Available
+When activated, AI assistants have direct access to these tools:
+*   `find_repos` — Find relevant repositories for a project idea or tech stack description.
+*   `compare_repos` — Perform side-by-side metric comparisons of two repositories.
+*   `summarize_repo` — Retrieve a metadata overview and parsed README summary.
+*   `clone_repos` — Clone one or more repositories by search key (e.g. A1, A2) or full name into a destination folder.
 
 ---
 
@@ -161,54 +218,27 @@ All configurations are stored persistently in `~/.grepcue/config.json`.
 <p align="center">
   <img src="assets/GRepcueconfig.png" alt="GRepcue Configuration Status" width="800"/>
 </p>
+
+#### Show Configuration Status
 ```bash
-# Show current configuration status (tokens, active AI configurations, layout)
 grepcue config
+```
 
-# Limit default search count (1-10)
+#### Limit Default Search Count (1-10)
+```bash
 grepcue config --max 3
+```
 
-# Adjust cache TTL (in minutes)
+#### Adjust Cache TTL (in minutes)
+```bash
 grepcue config --ttl 60
+```
 
-# Toggle simplified layout mode (disables ASCII art logo on wide terminals)
+#### Toggle Simplified Layout Mode
+Disables ASCII art logo on wide terminals:
+```bash
 grepcue config --tagline on
 ```
-
----
-
-## MCP Server Integration
-
-GRepcue acts as a **Model Context Protocol (MCP)** server, making its repository assistant tools directly available to AI coding assistants.
-
-### Claude Desktop Setup
-Open your Claude Desktop configuration file (located at `%APPDATA%\Claude\claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) and add the server:
-
-```json
-{
-  "mcpServers": {
-    "grepcue": {
-      "command": "node",
-      "args": ["C:/absolute/path/to/GRepcue/dist/mcp.js"]
-    }
-  }
-}
-```
-
-### Cursor Setup
-1. Open Cursor Settings.
-2. Navigate to **Features** -> **MCP**.
-3. Click **+ Add New MCP Server**.
-4. Configure as follows:
-   - **Name**: `grepcue`
-   - **Type**: `command`
-   - **Command**: `node C:/absolute/path/to/GRepcue/dist/mcp.js`
-
-### MCP Tools Available
-When activated, AI assistants have direct access to these tools:
-*   `find_repos` — Find relevant repositories for a project idea or tech stack description.
-*   `compare_repos` — Perform side-by-side metric comparisons of two repositories.
-*   `summarize_repo` — Retrieve a metadata overview and parsed README summary.
 
 ---
 
@@ -227,4 +257,9 @@ Search queries are evaluated and scored out of **100%** based on four weighted i
 
 ## License
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+Distributed under the GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE) for more information.
+
+---
+
+<h3 align="center"><b>nitsXcreation.</b></h3>
+
