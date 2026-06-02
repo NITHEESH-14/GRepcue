@@ -159,7 +159,7 @@ grepcue disconnect github
 All configurations are stored persistently in `~/.grepcue/config.json`.
 
 <p align="center">
-  <img src="assets/GRepcueconfig.jpeg" alt="GRepcue Configuration Status" width="800"/>
+  <img src="assets/GRepcueconfig.png" alt="GRepcue Configuration Status" width="800"/>
 </p>
 ```bash
 # Show current configuration status (tokens, active AI configurations, layout)
