@@ -149,13 +149,11 @@ export function extractKeywords(description: string): IntentResult {
     if (detectedCategory) break;
   }
 
-  // Filter out stop words and language names to get meaningful keywords
-  const languageWords = new Set(Object.keys(LANGUAGE_MAP));
+  // Filter out stop words to get meaningful keywords (keep language names since they are often part of repo names/topics)
   const keywords = words.filter(
     (word) =>
       word.length > 1 &&
-      !STOP_WORDS.has(word) &&
-      !languageWords.has(word)
+      !STOP_WORDS.has(word)
   );
 
   // If no keywords survived filtering, use the original words (minus just stop words)

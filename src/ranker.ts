@@ -48,21 +48,32 @@ const LICENSE_SCORES: Record<string, number> = {
 function scoreRelevance(repo: GitHubRepo, keywords: string[]): number {
   if (keywords.length === 0) return 0.5;
 
-  const searchText = [
-    repo.full_name,
-    repo.description || "",
-  ]
-    .join(" ")
-    .toLowerCase();
+  let totalScore = 0;
 
-  let matches = 0;
   for (const keyword of keywords) {
-    if (searchText.includes(keyword.toLowerCase())) {
-      matches++;
+    const kw = keyword.toLowerCase();
+    const name = repo.full_name.toLowerCase();
+    const description = (repo.description || "").toLowerCase();
+    const topics = (repo.topics || []).map((t) => t.toLowerCase());
+
+    let keywordScore = 0;
+
+    if (name.includes(kw)) {
+      // Highest priority: Match in actual name
+      keywordScore = 1.0;
+    } else if (description.includes(kw)) {
+      // Medium priority: Match in description
+      keywordScore = 0.6;
+    } else if (topics.includes(kw) || topics.some((t) => t.includes(kw))) {
+      // Low priority: Match in topics/tags
+      keywordScore = 0.4;
     }
+
+    totalScore += keywordScore;
   }
 
-  return Math.min(matches / keywords.length, 1);
+  // Normalize by number of keywords
+  return Math.min(totalScore / keywords.length, 1);
 }
 
 /**
@@ -161,4 +172,116 @@ export function rankRepos(
     ...item,
     rank: index + 1,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Grouping logic (shared between CLI and MCP)
+// ---------------------------------------------------------------------------
+
+export interface GroupedRepos {
+  letter: string;
+  name: string;
+  items: RankedRepo[];
+}
+
+/**
+ * Groups ranked repositories by keywords, fallback to query if not enough keywords.
+ */
+export function groupRepos(
+  repos: RankedRepo[],
+  query: string,
+  keywords: string[] = [],
+  maxPerGroup: number = 5
+): GroupedRepos[] {
+  const grouped: GroupedRepos[] = [];
+  let nextLetterCode = 65; // ASCII 'A'
+
+  const getNextLetter = () => {
+    const letter = String.fromCharCode(nextLetterCode);
+    nextLetterCode++;
+    return letter;
+  };
+
+  if (keywords.length > 1) {
+    const groups = new Map<string, RankedRepo[]>();
+    const uncategorized: RankedRepo[] = [];
+
+    // Initialize groups for each keyword in lowercase
+    for (const kw of keywords) {
+      groups.set(kw.toLowerCase(), []);
+    }
+
+    // Distribute repos into groups using matchedKeyword
+    for (const item of repos) {
+      const repo = item.repo;
+      const coreText = [
+        repo.full_name,
+        repo.description || "",
+        ...(repo.topics || [])
+      ].join(" ").toLowerCase();
+
+      let placed = false;
+
+      if (item.matchedKeyword) {
+        const sourceKey = item.matchedKeyword.toLowerCase();
+        if (groups.has(sourceKey)) {
+          groups.get(sourceKey)!.push(item);
+          placed = true;
+        }
+      }
+
+      if (!placed) {
+        // Fallback: text-based matching
+        let matched = false;
+        for (const kw of keywords) {
+          const kwLower = kw.toLowerCase();
+          const kwParts = kwLower.split("-").filter(w => w.length > 2);
+          const isMatch = kwParts.some(w => coreText.includes(w));
+          if (isMatch) {
+            groups.get(kwLower)!.push(item);
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          uncategorized.push(item);
+        }
+      }
+    }
+
+    // Create groups for keywords
+    for (const kw of keywords) {
+      const groupRepos = (groups.get(kw.toLowerCase()) || []).slice(0, maxPerGroup);
+      if (groupRepos.length > 0) {
+        // Capitalize first letter of keyword for display
+        const name = kw.charAt(0).toUpperCase() + kw.slice(1);
+        grouped.push({
+          letter: getNextLetter(),
+          name,
+          items: groupRepos
+        });
+      }
+    }
+
+    // Create group for uncategorized
+    if (uncategorized.length > 0) {
+      const cappedUncategorized = uncategorized.slice(0, maxPerGroup);
+      grouped.push({
+        letter: getNextLetter(),
+        name: "General / Related Matches",
+        items: cappedUncategorized
+      });
+    }
+  } else {
+    // Single group with original query or single keyword
+    // Capitalize first letter of query
+    const name = query.charAt(0).toUpperCase() + query.slice(1);
+    grouped.push({
+      letter: getNextLetter(),
+      name,
+      items: repos.slice(0, maxPerGroup)
+    });
+  }
+
+  return grouped;
 }

@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="logo.svg" alt="GRepcue Logo" width="650"/><br/>
-  <img src="title.svg" alt="GRepcue — Smart assistant to get GitHub repositories" width="600" />
+  <img src="assets/GRepcue.jpeg" alt="GRepcue Logo" width="800"/><br/>
+  <br/>
+  <img src="assets/title.svg" alt="GRepcue — Smart assistant to get GitHub repositories" width="500" />
 </p>
 
 ---
@@ -53,6 +54,10 @@ Once linked, the global `grepcue` executable is registered on your machine. You 
 
 GRepcue uses a modern, clean, spaced subcommand architecture.
 
+<p align="center">
+  <img src="assets/GRepcuehelp.jpeg" alt="GRepcue Help Menu" width="800"/>
+</p>
+
 ### Search Repositories
 Search using natural language project descriptions. GRepcue uses smart parallel concept queries and interleaves results to ensure you get high-quality matches for all parts of your query:
 ```bash
@@ -70,6 +75,16 @@ grepcue find "OCR parser" --max 3
 
 # Output raw JSON representation for script piping
 grepcue find "data science dashboard" --json
+```
+
+### Clone Repositories
+Clone search results or repositories using natural letter/number keys, full names, or URLs. The `--dest` directory parameter is strictly mandatory to prevent home folder clutter:
+```bash
+# Clone search results by key (comma-separated list)
+grepcue clone A1,A2,B5 --dest ./my-scrapers
+
+# Clone using full repository name or raw GitHub URL
+grepcue clone A1,facebook/react,https://github.com/vuejs/core.git --dest ./my-projects
 ```
 
 ### Bookmarks System
@@ -142,6 +157,10 @@ grepcue disconnect github
 
 ### View/Update Configuration
 All configurations are stored persistently in `~/.grepcue/config.json`.
+
+<p align="center">
+  <img src="assets/GRepcueconfig.jpeg" alt="GRepcue Configuration Status" width="800"/>
+</p>
 ```bash
 # Show current configuration status (tokens, active AI configurations, layout)
 grepcue config

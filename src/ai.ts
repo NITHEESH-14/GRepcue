@@ -14,15 +14,15 @@ import type { IntentResult, AIConfig } from "./types.js";
 const EXTRACTION_PROMPT = `You are a GitHub repository search assistant. Given a project description, extract the following as valid JSON:
 
 1. "keywords": Array of up to 6 search terms for GitHub. Follow this logic:
-   STEP 1 — Identify every distinct feature or product the user wants to build.
-   Each one becomes a keyword candidate regardless of how simple it sounds.
-   (e.g. "calculator", "chatbot", "plant disease detection" are all distinct features — keep all of them)
+   STEP 1 — Identify every distinct feature, component, or product the user wants to build. Keep related terms cohesive; do NOT split cohesive technical phrases into disjoint single-word keywords.
+   • Attach programming languages or framework modifiers directly to the feature if specified (e.g. use "javascript calculator" or "react chatbot" rather than splitting into "javascript", "calculator", "react", "chatbot").
+   • Keep multi-word features together (e.g. "web scraper", "plant-disease-detection", "chat bot", "image classification").
    
    STEP 2 — For any ML/AI feature, append one specific technical term alongside it.
    (e.g. "plant-disease-detection" → also add "image-classification" or "CNN")
    
    STEP 3 — Drop anything that is purely aesthetic or non-searchable on GitHub.
-   (e.g. "glassmorphism", "modern", "beautiful", "precise", "accurate")
+   (e.g. "glassmorphism", "modern", "beautiful", "precise", "accurate", "neat", "top right corner")
 
 2. "language": Primary programming language if mentioned or strongly implied. 
    If multiple are mentioned, pick the backend/core one. Return null if unclear.
@@ -45,10 +45,10 @@ Respond ONLY with valid JSON. No explanation, no markdown.
 
 Examples:
 Input: "real-time chat app using websockets in Python"
-Output: {"keywords": ["chatbot", "websocket", "real-time"], "language": "Python", "category": "web"}
+Output: {"keywords": ["python chat app", "websockets", "real-time"], "language": "Python", "category": "web"}
 
-Input: "web page with a chatbot, calculator, and a plant disease detection model from photo"
-Output: {"keywords": ["chatbot", "calculator", "plant-disease-detection", "image-classification", "CNN"], "language": null, "category": "web"}`;
+Input: "make a neat website with a calculator in javascript in neat design also i need a chat bot in the top right corner"
+Output: {"keywords": ["javascript calculator", "chatbot"], "language": "JavaScript", "category": "web"}`;
 
 
 /**

@@ -26,6 +26,7 @@ import {
   saveAIConfig,
   removeAIConfig,
   getConfigPath,
+  loadLastSearch,
 } from "./config.js";
 import {
   formatRepoList,
@@ -108,9 +109,10 @@ program
   .option("-l, --language <lang>", "Filter by programming language")
   .option("-m, --max <number>", "Maximum results (1-10)")
   .option("--no-cache", "Skip cached results")
+  .option("--no-history", "Skip saving search to history")
   .option("--json", "Output raw JSON")
   .description("Search for relevant GitHub repositories")
-  .action(async (query: string, opts: { language?: string; max?: string; cache: boolean; json: boolean }) => {
+  .action(async (query: string, opts: { language?: string; max?: string; cache: boolean; history: boolean; json: boolean }) => {
     const config = loadConfig();
     let finalQuery = query;
     const historyIndex = parseInt(query, 10);
@@ -155,7 +157,7 @@ program
             q += ` language:${lang}`;
           }
           // Fetch up to maxResults * 2 for each to allow rich ranking options
-          return searchRepositories(q, maxResults * 2, "stars", !opts.cache).catch(() => []);
+          return searchRepositories(q, maxResults * 2, "", !opts.cache).catch(() => []);
         });
         
         const resultsArray = await Promise.all(queryPromises);
@@ -198,7 +200,7 @@ program
         const repos = await searchRepositories(
           searchQuery,
           maxResults * 3,
-          "stars",
+          "",
           !opts.cache
         );
         ranked = rankRepos(repos, intent.keywords, maxResults);
@@ -229,8 +231,8 @@ program
         readline.cursorTo(process.stdout, 0);
       }
 
-      // Save search query to history if it returned results
-      if (ranked.length > 0) {
+      // Save search query to history if it returned results and history is not disabled
+      if (ranked.length > 0 && opts.history !== false) {
         const config = loadConfig();
         if (!config.history) {
           config.history = [];
@@ -270,6 +272,101 @@ program
         readline.cursorTo(process.stdout, 0);
       }
       console.error(formatError(error instanceof Error ? error : new Error(String(error))));
+      process.exit(1);
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// Command: clone
+// ---------------------------------------------------------------------------
+
+program
+  .command("clone")
+  .argument("<repos>", "Comma-separated list of keys (e.g. A1,A2) or repository names/URLs to clone")
+  .requiredOption("--dest <path>", "Destination directory to clone into")
+  .description("Clone search results or repositories by key or name")
+  .action(async (reposInput: string, opts: { dest: string }) => {
+    const destination = opts.dest;
+    const keys = reposInput.split(",").map((k) => k.trim()).filter(Boolean);
+
+    if (keys.length === 0) {
+      console.log(formatError("No repositories or keys specified to clone."));
+      process.exit(1);
+    }
+
+    const mapping = loadLastSearch();
+    const cloneTargets: { name: string; url: string }[] = [];
+
+    for (const key of keys) {
+      if (/^[a-zA-Z]\d+$/.test(key)) {
+        const repoName = mapping[key.toUpperCase()];
+        if (repoName) {
+          cloneTargets.push({
+            name: repoName,
+            url: `https://github.com/${repoName}.git`,
+          });
+        } else {
+          console.log(formatWarning(`Key "${key}" was not found in the last search results.`));
+        }
+      } else {
+        let url = key;
+        let name = key;
+
+        if (!key.startsWith("http") && !key.startsWith("git@")) {
+          if (/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(key)) {
+            url = `https://github.com/${key}.git`;
+          } else {
+            console.log(formatWarning(`"${key}" is not a valid repository name (owner/repo) or URL.`));
+            continue;
+          }
+        } else {
+          const match = key.match(/\/([a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)(?:\.git)?$/);
+          if (match) {
+            name = match[1];
+          }
+        }
+
+        cloneTargets.push({ name, url });
+      }
+    }
+
+    if (cloneTargets.length === 0) {
+      console.log(formatError("No valid clone targets identified."));
+      process.exit(1);
+    }
+
+    console.log("");
+    console.log(chalk.hex("#A78BFA").bold("  📥 Cloning Repositories"));
+    console.log(chalk.dim(`  Destination: ${destination}\n`));
+
+    const spinner = ora({ text: "Cloning...", spinner: DOTS_SPINNER, color: "magenta" }).start();
+
+    try {
+      const { existsSync, mkdirSync } = await import("node:fs");
+      if (!existsSync(destination)) {
+        mkdirSync(destination, { recursive: true });
+      }
+
+      const { exec } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const execAsync = promisify(exec);
+
+      for (const target of cloneTargets) {
+        spinner.text = `Cloning ${chalk.bold(target.name)}...`;
+        try {
+          await execAsync(`git clone ${target.url}`, { cwd: destination });
+          spinner.info(formatSuccess(`Cloned ${chalk.bold(target.name)}`));
+          spinner.start();
+        } catch (err: any) {
+          spinner.fail(formatError(`Failed to clone ${chalk.bold(target.name)}: ${err.message}`));
+          spinner.start();
+        }
+      }
+      spinner.stop();
+      console.log(formatSuccess("Cloning process finished."));
+    } catch (error: any) {
+      spinner.stop();
+      console.error(formatError(error));
       process.exit(1);
     }
   });
@@ -862,7 +959,8 @@ if (process.argv.length <= 2) {
     console.log("");
     console.log(formatTagline() + "\n");
     console.log(chalk.bold("  Commands:"));
-    console.log(`    ${chalk.hex("#60A5FA")("find")} <query>         Search repos`);
+    console.log(`    ${chalk.hex("#60A5FA")("find")} <query> [options] Search repos`);
+    console.log(`    ${chalk.hex("#60A5FA")("clone")} <repos> --dest <path> Clone repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <a> <b>      Compare repos`);
     console.log(`    ${chalk.hex("#60A5FA")("summarize")} <repo>    Summarize repo`);
     console.log(`    ${chalk.hex("#60A5FA")("connect github")}      Save GitHub token (raise rate limits)`);
@@ -873,8 +971,10 @@ if (process.argv.length <= 2) {
     console.log(`    ${chalk.hex("#60A5FA")("bookmarks")}           Show bookmarked repositories`);
     console.log(`    ${chalk.hex("#60A5FA")("config")} [options]     Show/update config`);
     console.log(`    ${chalk.hex("#60A5FA")("help")}                Show help\n`);
+    console.log(chalk.dim("  To see options for a command, use: grepcue help [command]\n"));
     console.log(chalk.bold("  Examples:"));
     console.log(chalk.dim("    grepcue find scraper"));
+    console.log(chalk.dim("    grepcue clone A1,A2 --dest ./my-scrapers"));
     console.log(chalk.dim("    grepcue summarize vercel/next.js\n"));
   } else {
     console.log(getLogo());
@@ -884,7 +984,8 @@ if (process.argv.length <= 2) {
     console.log("");
     console.log(formatTagline() + "\n");
     console.log(chalk.bold("  Commands:"));
-    console.log(`    ${chalk.hex("#60A5FA")("find")} <query>             Search for repos`);
+    console.log(`    ${chalk.hex("#60A5FA")("find")} <query> [options]    Search for repos`);
+    console.log(`    ${chalk.hex("#60A5FA")("clone")} <repos> --dest <path> Clone search results or repos`);
     console.log(`    ${chalk.hex("#60A5FA")("compare")} <repo_a> <repo_b>  Compare two repos`);
     console.log(`    ${chalk.hex("#60A5FA")("summarize")} <repo>          Summarize a repo's README`);
     console.log(`    ${chalk.hex("#60A5FA")("connect github")}            Save GitHub token to increase API limits`);
@@ -895,9 +996,11 @@ if (process.argv.length <= 2) {
     console.log(`    ${chalk.hex("#60A5FA")("bookmarks")}                 Show bookmarked repositories`);
     console.log(`    ${chalk.hex("#60A5FA")("config")} [options]          Show or update config`);
     console.log(`    ${chalk.hex("#60A5FA")("help")}                      Show help\n`);
-    console.log(chalk.dim("  Examples:"));
+    console.log(chalk.dim("  To see options for a command, use: grepcue help [command]\n"));
+    console.log(chalk.bold("  Examples:"));
     console.log(chalk.dim('    grepcue find scraper'));
-    console.log(chalk.dim('    grepcue find "web scraper" --language python --max 3'));
+    console.log(chalk.dim('    grepcue find "web scraper" --language python --max 3 --no-cache --no-history'));
+    console.log(chalk.dim("    grepcue clone A1,A2 --dest ./my-scrapers"));
     console.log(chalk.dim("    grepcue compare facebook/react vuejs/core"));
     console.log(chalk.dim("    grepcue summarize vercel/next.js\n"));
   }

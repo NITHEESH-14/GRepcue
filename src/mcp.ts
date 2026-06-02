@@ -8,7 +8,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { searchRepositories, compareRepos, summarizeRepo } from "./github.js";
 import { extractKeywords, buildSearchQuery } from "./intent.js";
-import { rankRepos } from "./ranker.js";
+import { rankRepos, groupRepos } from "./ranker.js";
+import { saveLastSearch, loadLastSearch } from "./config.js";
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -54,7 +55,11 @@ server.tool(
       // Rank results
       const ranked = rankRepos(repos, intent.keywords, max_results);
 
-      if (ranked.length === 0) {
+      // Group results
+      const grouped = groupRepos(ranked, description, intent.keywords, max_results);
+      const mapping: Record<string, string> = {};
+
+      if (grouped.length === 0) {
         return {
           content: [
             {
@@ -66,25 +71,37 @@ server.tool(
       }
 
       // Format as structured text for the LLM
-      const results = ranked.map((item) => {
-        const r = item.repo;
-        return [
-          `${item.rank}. **${r.full_name}** ⭐ ${r.stargazers_count.toLocaleString()}`,
-          `   URL: ${r.html_url}`,
-          `   Language: ${r.language || "N/A"} | License: ${r.license?.spdx_id || "None"} | Last push: ${new Date(r.pushed_at).toLocaleDateString()}`,
-          `   ${r.description || "No description"}`,
-          `   Score: ${(item.score.total * 100).toFixed(0)}% (relevance: ${(item.score.relevance * 100).toFixed(0)}%, popularity: ${(item.score.popularity * 100).toFixed(0)}%, recency: ${(item.score.recency * 100).toFixed(0)}%, license: ${(item.score.license * 100).toFixed(0)}%)`,
-          r.topics?.length ? `   Topics: ${r.topics.join(", ")}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n");
+      const formattedGroups = grouped.map((group) => {
+        const groupLines = [`### ${group.letter}. ${group.name}`];
+        
+        const itemLines = group.items.map((item, index) => {
+          const r = item.repo;
+          const key = `${group.letter}${index + 1}`;
+          mapping[key] = r.full_name;
+
+          return [
+            `**${key}** - **${r.full_name}** ⭐ ${r.stargazers_count.toLocaleString()}`,
+            `   URL: ${r.html_url}`,
+            `   Language: ${r.language || "N/A"} | License: ${r.license?.spdx_id || "None"} | Last push: ${new Date(r.pushed_at).toLocaleDateString()}`,
+            `   ${r.description || "No description"}`,
+            `   Score: ${(item.score.total * 100).toFixed(0)}% (relevance: ${(item.score.relevance * 100).toFixed(0)}%, popularity: ${(item.score.popularity * 100).toFixed(0)}%, recency: ${(item.score.recency * 100).toFixed(0)}%, license: ${(item.score.license * 100).toFixed(0)}%)`,
+            r.topics?.length ? `   Topics: ${r.topics.join(", ")}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n");
+        });
+
+        return groupLines.concat(itemLines).join("\n\n");
       });
+
+      // Save mapping to file
+      saveLastSearch(mapping);
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `Found ${ranked.length} relevant repositories for "${description}":\n\n${results.join("\n\n")}`,
+            text: `Found relevant repositories for "${description}":\n\n${formattedGroups.join("\n\n")}`,
           },
         ],
       };
@@ -208,6 +225,115 @@ server.tool(
           {
             type: "text" as const,
             text: `Error summarizing repository: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Tool 4: clone_repos
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "clone_repos",
+  "Clone one or more GitHub repositories by their keys (e.g., A1, A2, B5) from the last search, or by their repository names (e.g., owner/repo) or GitHub URLs. To prevent cluttering, you must provide a destination directory.",
+  {
+    repos: z
+      .string()
+      .describe("Comma-separated list of keys, repository names, or URLs to clone"),
+    destination: z
+      .string()
+      .describe("Absolute path where the repositories should be cloned"),
+  },
+  async ({ repos, destination }) => {
+    try {
+      const keys = repos.split(",").map((k) => k.trim()).filter(Boolean);
+      const cwd = destination;
+      const mapping = loadLastSearch();
+
+      const cloneTargets: { name: string; url: string }[] = [];
+      const logs: string[] = [];
+
+      for (const key of keys) {
+        if (/^[a-zA-Z]\d+$/.test(key)) {
+          const repoName = mapping[key.toUpperCase()];
+          if (repoName) {
+            cloneTargets.push({
+              name: repoName,
+              url: `https://github.com/${repoName}.git`,
+            });
+          } else {
+            logs.push(`Warning: Key "${key}" was not found in the last search results.`);
+          }
+        } else {
+          let url = key;
+          let name = key;
+
+          if (!key.startsWith("http") && !key.startsWith("git@")) {
+            if (/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(key)) {
+              url = `https://github.com/${key}.git`;
+            } else {
+              logs.push(`Warning: "${key}" is not a valid repository name (owner/repo) or URL.`);
+              continue;
+            }
+          } else {
+            const match = key.match(/\/([a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)(?:\.git)?$/);
+            if (match) {
+              name = match[1];
+            }
+          }
+          cloneTargets.push({ name, url });
+        }
+      }
+
+      if (cloneTargets.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No valid clone targets identified.\nLogs:\n${logs.join("\n")}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const { existsSync, mkdirSync } = await import("node:fs");
+      if (!existsSync(cwd)) {
+        mkdirSync(cwd, { recursive: true });
+      }
+
+      const { exec } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const execAsync = promisify(exec);
+
+      for (const target of cloneTargets) {
+        try {
+          logs.push(`Cloning ${target.name} from ${target.url}...`);
+          await execAsync(`git clone ${target.url}`, { cwd });
+          logs.push(`Successfully cloned ${target.name}.`);
+        } catch (err: any) {
+          logs.push(`Failed to clone ${target.name}: ${err.message}`);
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Cloning completed.\n\nLogs:\n${logs.join("\n")}`,
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error cloning repositories: ${error.message}`,
           },
         ],
         isError: true,

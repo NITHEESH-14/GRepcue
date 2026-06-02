@@ -14,12 +14,36 @@ import type { AIConfig, RepcueConfig } from "./types.js";
 
 const CONFIG_DIR = join(homedir(), ".grepcue");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
+const LAST_SEARCH_FILE = join(CONFIG_DIR, "last_search.json");
 
 /**
  * Returns the path to the config file.
  */
 export function getConfigPath(): string {
   return CONFIG_FILE;
+}
+
+/**
+ * Saves the last search key-to-repo mapping.
+ */
+export function saveLastSearch(mapping: Record<string, string>): void {
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+  writeFileSync(LAST_SEARCH_FILE, JSON.stringify(mapping, null, 2), "utf-8");
+}
+
+/**
+ * Loads the last search key-to-repo mapping.
+ */
+export function loadLastSearch(): Record<string, string> {
+  try {
+    if (existsSync(LAST_SEARCH_FILE)) {
+      const raw = readFileSync(LAST_SEARCH_FILE, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch {}
+  return {};
 }
 
 // ---------------------------------------------------------------------------

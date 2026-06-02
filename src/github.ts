@@ -84,13 +84,13 @@ interface SearchResponse {
  *
  * @param query — GitHub search query string (e.g., "web scraper language:Python")
  * @param maxResults — Maximum number of results to return (1-100, default 5)
- * @param sort — Sort field: "stars" | "forks" | "updated" (default "stars")
+ * @param sort — Sort field: "stars" | "forks" | "updated" | "" (default "" for relevance/best-match)
  * @param noCache — Skip the cache and make a fresh request
  */
 export async function searchRepositories(
   query: string,
   maxResults: number = 5,
-  sort: "stars" | "forks" | "updated" = "stars",
+  sort: "stars" | "forks" | "updated" | "" = "",
   noCache: boolean = false
 ): Promise<GitHubRepo[]> {
   const cacheKey = makeCacheKey("search", query, maxResults, sort);
@@ -103,7 +103,11 @@ export async function searchRepositories(
   // Fetch more results than needed to allow for filtering/ranking
   const perPage = Math.min(Math.max(maxResults * 3, 15), 100);
   const encodedQuery = encodeURIComponent(query);
-  const path = `/search/repositories?q=${encodedQuery}&sort=${sort}&order=desc&per_page=${perPage}`;
+  
+  let path = `/search/repositories?q=${encodedQuery}&per_page=${perPage}`;
+  if (sort) {
+    path += `&sort=${sort}&order=desc`;
+  }
 
   const data = await githubFetch<SearchResponse>(path);
   const results = data.items || [];

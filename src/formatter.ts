@@ -13,7 +13,8 @@ import type {
   GitHubRepo,
 } from "./types.js";
 import { AI_PROVIDER_PRESETS } from "./types.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, saveLastSearch } from "./config.js";
+import { groupRepos } from "./ranker.js";
 
 // ---------------------------------------------------------------------------
 // Color palette
@@ -159,16 +160,14 @@ export function formatRepoList(
     "",
   ];
 
-  const renderItem = (item: RankedRepo, sectionIndex?: number) => {
-    const { repo, score, rank } = item;
+  const renderItem = (item: RankedRepo, key: string) => {
+    const { repo, score } = item;
     const stars = formatNumber(repo.stargazers_count);
     const lang = repo.language || "N/A";
     const license = repo.license?.spdx_id || "No License";
 
-    const displayRank = sectionIndex !== undefined ? sectionIndex : rank;
-
     const itemLines: string[] = [];
-    itemLines.push(`  ${c.brand(`${displayRank}.`)} ${c.bold(repo.full_name)}`);
+    itemLines.push(`  ${c.brand(`${key}`)} ${c.bold(repo.full_name)}`);
     itemLines.push(
       `     ${c.star("⭐")} ${c.num(stars)}  ` +
         `${c.info("🔤")} ${lang}  ` +
@@ -193,81 +192,21 @@ export function formatRepoList(
     return itemLines.join("\n");
   };
 
-  // If we have keywords, group the repositories!
-  if (keywords.length > 1) {
-    const groups = new Map<string, RankedRepo[]>();
-    const uncategorized: RankedRepo[] = [];
+  const grouped = groupRepos(repos, query, keywords, maxPerGroup);
+  const mapping: Record<string, string> = {};
 
-    // Initialize groups for each keyword in lowercase
-    for (const kw of keywords) {
-      groups.set(kw.toLowerCase(), []);
-    }
-
-    // Distribute repos into groups using matchedKeyword (set by cli.ts parallel search tracking)
-    for (const item of repos) {
-      const repo = item.repo;
-      // Core text: name + description + topics for rich relevance validation
-      const coreText = [
-        repo.full_name,
-        repo.description || "",
-        ...(repo.topics || [])
-      ].join(" ").toLowerCase();
-
-      let placed = false;
-
-      if (item.matchedKeyword) {
-        const sourceKey = item.matchedKeyword.toLowerCase();
-        if (groups.has(sourceKey)) {
-          groups.get(sourceKey)!.push(item);
-          placed = true;
-        }
-      }
-
-      if (placed) continue;
-      // Fallback: text-based matching using name + description + topics
-      let matched = false;
-      for (const kw of keywords) {
-        const kwLower = kw.toLowerCase();
-        const kwParts = kwLower.split("-").filter(w => w.length > 2);
-        const isMatch = kwParts.some(w => coreText.includes(w));
-        if (isMatch) {
-          groups.get(kwLower)!.push(item);
-          matched = true;
-          break;
-        }
-      }
-      if (!matched) {
-        uncategorized.push(item);
-      }
-    }
-
-    // Render grouped items (capped at maxPerGroup per section)
-    for (const kw of keywords) {
-      const groupRepos = (groups.get(kw.toLowerCase()) || []).slice(0, maxPerGroup);
-      if (groupRepos.length > 0) {
-        lines.push(c.brand.bold(`  📌 Matches for "${kw}":`));
-        lines.push("");
-        groupRepos.forEach((item, index) => {
-          lines.push(renderItem(item, index + 1));
-        });
-      }
-    }
-
-    // Render uncategorized items (also capped)
-    if (uncategorized.length > 0) {
-      const cappedUncategorized = uncategorized.slice(0, maxPerGroup);
-      lines.push(c.brand.bold("  🔍 General / Related Matches:"));
-      lines.push("");
-      cappedUncategorized.forEach((item, index) => {
-        lines.push(renderItem(item, index + 1));
-      });
-    }
-  } else {
-    // Standard flat list if 1 or 0 keywords
-    for (const item of repos) {
-      lines.push(renderItem(item));
-    }
+  for (const group of grouped) {
+    lines.push(`  ${c.brand.bold(`${group.letter}. ${group.name}`)}`);
+    lines.push("");
+    group.items.forEach((item, index) => {
+      const key = `${group.letter}${index + 1}`;
+      mapping[key] = item.repo.full_name;
+      lines.push(renderItem(item, key));
+    });
   }
+
+  // Save the key mapping to disk for the clone command
+  saveLastSearch(mapping);
 
   return lines.join("\n");
 }
@@ -464,7 +403,8 @@ export function formatHelp(): string {
 
   lines.push(c.bold("  Commands:"));
   lines.push(
-    `    ${c.info("find")} <query>              Search for GitHub repositories`,
+    `    ${c.info("find")} <query> [options]    Search for GitHub repositories`,
+    `    ${c.info("clone")} <repos> --dest <path> Clone repositories by key or name`,
     `    ${c.info("compare")} <repo_a> <repo_b>  Compare two repos side by side`,
     `    ${c.info("summarize")} <repo>           Summarize a repo and its README`,
     `    ${c.info("connect github")}             Save GitHub token to increase API rate limits`,
@@ -484,7 +424,9 @@ export function formatHelp(): string {
     "",
     c.bold("  Options:"),
     `    ${c.info("-V, --version")}  Show version`,
-    `    ${c.info("-h, --help")}     Show help`
+    `    ${c.info("-h, --help")}     Show help`,
+    "",
+    c.dim("  To see options for a command, use: grepcue help [command]")
   );
 
   lines.push(
@@ -499,7 +441,8 @@ export function formatHelp(): string {
   lines.push(
     c.dim("  Examples:"),
     c.dim("    grepcue find scraper"),
-    c.dim('    grepcue find "web scraper" --language python --max 3'),
+    c.dim('    grepcue find "web scraper" --language python --max 3 --no-cache --no-history'),
+    c.dim("    grepcue clone A1,A2 --dest ./my-scrapers"),
     c.dim("    grepcue compare facebook/react vuejs/core"),
     c.dim("    grepcue summarize vercel/next.js"),
     ""
