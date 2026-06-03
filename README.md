@@ -36,6 +36,20 @@ Reinventing the wheel from scratch is slow. **GRepcue** is built to solve this e
 *   **Learn and Build Faster**: Find highly relevant codebases, study their architectural decisions, reuse their open-source libraries, and launch your idea 10x faster.
 *   **Bridge Standalone & AI Workflow**: Runs as an interactive terminal **CLI** for fast developer exploration, and as an **MCP Server** to act as the direct search eyes for your AI assistants (like Claude, Cursor, or ChatGPT), allowing them to pull real-world codebase references into your active coding context.
 
+#### 💡 Quick Example
+
+Imagine you're planning to build a music streaming application similar to Spotify, but with an integrated audio amplifier and sound enhancement features and many more.
+
+Instead of building it from scratch, you can use **𝐆𝐑𝐞𝐩𝐜𝐮𝐞** and combine everything into your beautiful idea.
+
+**𝐆𝐑𝐞𝐩𝐜𝐮𝐞** breaks the idea into multiple concepts such as:
+*   **Music streaming applications**
+*   **Spotify clones**
+*   **Audio amplifier libraries**
+*   **Audio processing engines**
+
+...and finds the related repositories on GitHub.
+
 ---
 
 ## Features
